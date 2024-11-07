@@ -20,7 +20,7 @@ module tt_um_lif (
   assign uio_oe  = 1;
 
   // List all unused inputs to prevent warnings
-  wire _unused = &{ena,uio_in, 1'b0};
+  wire unused = &{ena, uio_in, 1'b0};
   
   // instantiate lif neuron
 	lif lif1(.current(ui_in), .clk(clk), .reset_n(rst_n), .state(uo_out), .spike(uio_out[7]));
