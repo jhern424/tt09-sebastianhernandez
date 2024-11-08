@@ -1,164 +1,144 @@
-// tt_um_hh_stdp.v
 `default_nettype none
 
-module tt_um_hh_stdp (
-    input  wire [7:0] ui_in,    
-    output wire [7:0] uo_out,   
-    input  wire [7:0] uio_in,   
-    output wire [7:0] uio_out,  
-    output wire [7:0] uio_oe,   
-    input  wire       ena,      
-    input  wire       clk,      
-    input  wire       rst_n     
-);
-    parameter WIDTH = 8;
-    parameter DECIMAL_BITS = 4;
-
-    // Internal signals
-    wire [7:0] v_mem1;
-    wire [7:0] v_mem2;
-    wire spike1, spike2;
-    wire signed [WIDTH-1:0] i_syn;
-    wire signed [WIDTH-1:0] current;
-
-    // Modified current input scaling for stronger effect
-    assign current = $signed({1'b0, ui_in}) - $signed(8'd128);  // Full range current input
-
-    // First neuron
-    lif_neuron #(
-        .WIDTH(WIDTH),
-        .DECIMAL_BITS(DECIMAL_BITS)
-    ) neuron1 (
-        .clk(clk),
-        .reset_n(rst_n),
-        .i_stim(current),
-        .i_syn({WIDTH{1'b0}}),
-        .spike(spike1),
-        .v_mem(v_mem1)
-    );
-
-    // STDP synapse with stronger effect
-    stdp_synapse #(
-        .WIDTH(WIDTH),
-        .DECIMAL_BITS(DECIMAL_BITS)
-    ) synapse (
-        .clk(clk),
-        .reset_n(rst_n),
-        .pre_spike(spike1),
-        .post_spike(spike2),
-        .i_syn(i_syn)
-    );
-
-    // Second neuron
-    lif_neuron #(
-        .WIDTH(WIDTH),
-        .DECIMAL_BITS(DECIMAL_BITS)
-    ) neuron2 (
-        .clk(clk),
-        .reset_n(rst_n),
-        .i_stim({WIDTH{1'b0}}),
-        .i_syn(i_syn),
-        .spike(spike2),
-        .v_mem(v_mem2)
-    );
-
-    // Output assignments
-    assign uo_out = v_mem1;
-    assign uio_out = {spike1, spike2, v_mem2[7:2]};
-    assign uio_oe = 8'b11111111;
-
-    wire unused = ena & |uio_in;
-endmodule
-
-module lif_neuron #(
-    parameter WIDTH = 8,
-    parameter DECIMAL_BITS = 4
-)(
-    input wire clk,
-    input wire reset_n,
-    input wire signed [WIDTH-1:0] i_stim,
-    input wire signed [WIDTH-1:0] i_syn,
-    output reg spike,
-    output wire [7:0] v_mem
-);
-    // Much more sensitive parameters
-    localparam signed [WIDTH-1:0] ONE = (1 << DECIMAL_BITS);
-    localparam signed [WIDTH-1:0] V_REST = 0;                // Resting at 0
-    localparam signed [WIDTH-1:0] V_THRESH = (ONE >>> 2);    // Very low threshold
-    localparam signed [WIDTH-1:0] TAU = ONE << 1;           // Much faster integration
-    
-    reg signed [WIDTH-1:0] v_mem_int;
-    reg signed [WIDTH-1:0] leak_current;
-    reg signed [WIDTH-1:0] total_current;
-
-    // Simple linear scaling
-    assign v_mem = v_mem_int[WIDTH-1:DECIMAL_BITS];
-
-    always @(posedge clk or negedge reset_n) begin
-        if (!reset_n) begin
-            v_mem_int <= V_REST;
-            leak_current <= 0;
-            total_current <= 0;
-            spike <= 0;
-        end else begin
-            // Very weak leak
-            leak_current <= (V_REST - v_mem_int) >>> 3;
-            
-            // Direct current summation with emphasis on input
-            total_current <= (i_stim <<< 1) + i_syn + leak_current;
-            
-            if (spike) begin
-                v_mem_int <= V_REST;
-                spike <= 0;
-            end else begin
-                // Faster integration
-                v_mem_int <= v_mem_int + ((total_current * TAU) >>> (DECIMAL_BITS - 2));
-                spike <= (v_mem_int >= V_THRESH);
-            end
-        end
-    end
-endmodule
-
-module stdp_synapse #(
-    parameter WIDTH = 8,
-    parameter DECIMAL_BITS = 4
-)(
+// STDP module to handle synaptic weight updates
+module stdp (
     input wire clk,
     input wire reset_n,
     input wire pre_spike,
     input wire post_spike,
-    output wire signed [WIDTH-1:0] i_syn
+    output reg [7:0] weight
 );
-    // Modified parameters for stronger effect
-    localparam [WIDTH-1:0] ONE = (1 << DECIMAL_BITS);
-    localparam [WIDTH-1:0] MAX_WEIGHT = ONE << 2;  // Much higher max weight
-    localparam [WIDTH-1:0] MIN_WEIGHT = ONE >>> 2;
+    // Parameters for STDP
+    parameter INIT_WEIGHT = 8'd100;
+    parameter POS_DELTA = 8'd10;
+    parameter NEG_DELTA = 8'd5;
     
-    reg [WIDTH-1:0] trace;
-    reg [WIDTH-1:0] weight;
-
-    // Stronger synaptic current
-    assign i_syn = pre_spike ? $signed({1'b0, weight}) <<< 1 : 0;
-
+    // STDP timing window (in clock cycles)
+    parameter WINDOW = 4'd10;
+    
+    // Counters for pre and post spike timing
+    reg [3:0] pre_counter;
+    reg [3:0] post_counter;
+    
+    // Sequential logic for STDP
     always @(posedge clk or negedge reset_n) begin
         if (!reset_n) begin
-            trace <= 0;
-            weight <= ONE;
+            weight <= INIT_WEIGHT;
+            pre_counter <= 0;
+            post_counter <= 0;
         end else begin
-            // Faster trace dynamics
+            // Update counters
             if (pre_spike)
-                trace <= ONE << 2;
-            else
-                trace <= (trace > 0) ? trace - 1 : 0;
-            
-            // More aggressive weight updates
-            if (post_spike && trace > 0) begin
-                weight <= (weight < MAX_WEIGHT - (ONE >>> 1)) ? 
-                         weight + (ONE >>> 1) : MAX_WEIGHT;
-            end else if (pre_spike && post_spike) begin
-                weight <= (weight > MIN_WEIGHT + (ONE >>> 2)) ? 
-                         weight - (ONE >>> 2) : MIN_WEIGHT;
+                pre_counter <= WINDOW;
+            else if (pre_counter > 0)
+                pre_counter <= pre_counter - 1;
+                
+            if (post_spike)
+                post_counter <= WINDOW;
+            else if (post_counter > 0)
+                post_counter <= post_counter - 1;
+                
+            // Update weight based on spike timing
+            if (pre_spike && post_counter > 0) begin
+                // Potentiation: pre -> post
+                if (weight <= (8'd255 - POS_DELTA))
+                    weight <= weight + POS_DELTA;
+                else
+                    weight <= 8'd255;
+            end else if (post_spike && pre_counter > 0) begin
+                // Depression: post -> pre
+                if (weight >= NEG_DELTA)
+                    weight <= weight - NEG_DELTA;
+                else
+                    weight <= 8'd0;
             end
         end
     end
+endmodule
+
+// Modified LIF module with weighted input
+module lif_weighted (
+    input wire [7:0] current,
+    input wire [7:0] weight,
+    input wire clk,
+    input wire reset_n,
+    output reg [7:0] state,
+    output wire spike
+);
+    // Internal signals
+    wire [15:0] weighted_input;
+    wire [7:0] next_state;
+    reg [7:0] threshold;
+    
+    // Apply weight to input current
+    assign weighted_input = (current * weight) >> 8;
+    
+    // Sequential logic
+    always @(posedge clk or negedge reset_n) begin
+        if (!reset_n) begin
+            state <= 8'd0;
+            threshold <= 8'd200;
+        end else begin
+            state <= next_state;
+        end
+    end
+    
+    // Next state logic
+    assign next_state = weighted_input[7:0] + (state >> 1);
+    
+    // Spike output
+    assign spike = (state >= threshold);
+endmodule
+
+// Top module with two connected LIF neurons
+module tt_um_two_lif_stdp (
+    input wire [7:0] ui_in,      // Input current for first neuron
+    output wire [7:0] uo_out,    // State of second neuron
+    input wire [7:0] uio_in,     // Additional inputs (unused)
+    output wire [7:0] uio_out,   // Additional outputs
+    output wire [7:0] uio_oe,    // IO direction control
+    input wire ena,              // Enable (unused)
+    input wire clk,              // Clock
+    input wire rst_n             // Reset (active low)
+);
+    // Internal signals
+    wire spike1, spike2;
+    wire [7:0] state1;
+    wire [7:0] synapse_weight;
+    
+    // All output pins must be assigned
+    assign uio_oe = 8'hFF;  // All outputs
+    assign uio_out = {spike1, spike2, synapse_weight[5:0]};
+    
+    // First LIF neuron
+    lif lif1 (
+        .current(ui_in),
+        .clk(clk),
+        .reset_n(rst_n),
+        .state(state1),
+        .spike(spike1)
+    );
+    
+    // STDP synapse
+    stdp stdp1 (
+        .clk(clk),
+        .reset_n(rst_n),
+        .pre_spike(spike1),
+        .post_spike(spike2),
+        .weight(synapse_weight)
+    );
+    
+    // Second LIF neuron with weighted input
+    lif_weighted lif2 (
+        .current(state1),
+        .weight(synapse_weight),
+        .clk(clk),
+        .reset_n(rst_n),
+        .state(uo_out),
+        .spike(spike2)
+    );
+    
+    // Unused inputs
+    wire unused = &{ena, uio_in, 1'b0};
+    
 endmodule
