@@ -7,7 +7,7 @@ project:
     - Two coupled Leaky Integrate-and-Fire (LIF) neurons
     - Spike-timing-dependent plasticity (STDP) learning
     - 8-bit fixed-point arithmetic
-    - Configurable synaptic weights
+    - Dynamic synaptic weights
     - Real-time membrane potential monitoring"
   language: "Verilog"
   clock_hz: 50000000
@@ -15,36 +15,32 @@ project:
   top_module: "tt_um_hh_stdp"
   source_files:
     - "tt_um_hh_stdp.v"
-
 pinout:
-  ui[0]: "Input current bit 0 (LSB) - Range 0-255, centered at 64"
-  ui[1]: "Input current bit 1 - Positive values > 64 are excitatory"
-  ui[2]: "Input current bit 2 - Negative values < 64 are inhibitory"
-  ui[3]: "Input current bit 3"
-  ui[4]: "Input current bit 4"
-  ui[5]: "Input current bit 5"
-  ui[6]: "Input current bit 6"
-  ui[7]: "Input current bit 7 (MSB)"
-
+    ui[0]: "Input current bit 0 (LSB) - Range 0-255, centered at 128"
+    ui[1]: "Input current bit 1 - Positive values > 128 are excitatory"
+    ui[2]: "Input current bit 2 - Negative values < 128 are inhibitory"
+    ui[3]: "Input current bit 3"
+    ui[4]: "Input current bit 4"
+    ui[5]: "Input current bit 5"
+    ui[6]: "Input current bit 6"
+    ui[7]: "Input current bit 7 (MSB)"
     # Neuron 1 membrane voltage output (uo[7:0])
-  uo[0]: "Neuron 1 membrane voltage bit 0 (LSB)"
-  uo[1]: "Neuron 1 membrane voltage bit 1"
-  uo[2]: "Neuron 1 membrane voltage bit 2"
-  uo[3]: "Neuron 1 membrane voltage bit 3"
-  uo[4]: "Neuron 1 membrane voltage bit 4"
-  uo[5]: "Neuron 1 membrane voltage bit 5"
-  uo[6]: "Neuron 1 membrane voltage bit 6"
-  uo[7]: "Neuron 1 membrane voltage bit 7 (MSB)"
-
+    uo[0]: "Neuron 1 membrane voltage bit 0 (LSB)"
+    uo[1]: "Neuron 1 membrane voltage bit 1"
+    uo[2]: "Neuron 1 membrane voltage bit 2"
+    uo[3]: "Neuron 1 membrane voltage bit 3"
+    uo[4]: "Neuron 1 membrane voltage bit 4"
+    uo[5]: "Neuron 1 membrane voltage bit 5"
+    uo[6]: "Neuron 1 membrane voltage bit 6"
+    uo[7]: "Neuron 1 membrane voltage bit 7 (MSB)"
     # Bidirectional pins for spikes and neuron 2 voltage (uio[7:0])
-  uio[0]: "Neuron 1 spike output (1 = spike occurred)"
-  uio[1]: "Neuron 2 spike output (1 = spike occurred)"
-  uio[2]: "Neuron 2 membrane voltage bit 0 (LSB)"
-  uio[3]: "Neuron 2 membrane voltage bit 1"
-  uio[4]: "Neuron 2 membrane voltage bit 2"
-  uio[5]: "Neuron 2 membrane voltage bit 3"
-  uio[6]: "Neuron 2 membrane voltage bit 4"
-  uio[7]: "Neuron 2 membrane voltage bit 5 (MSB)"
-
-# Do not change!
-yaml_version: 6
+    uio[0]: "Neuron 2 membrane voltage bit 0 (LSB)"
+    uio[1]: "Neuron 2 membrane voltage bit 1"
+    uio[2]: "Neuron 2 membrane voltage bit 2"
+    uio[3]: "Neuron 2 membrane voltage bit 3"
+    uio[4]: "Neuron 2 membrane voltage bit 4"
+    uio[5]: "Neuron 2 membrane voltage bit 5"
+    uio[6]: "Neuron 2 spike output"
+    uio[7]: "Neuron 1 spike output"
+  # Do not change!
+  yaml_version: 6

@@ -21,8 +21,8 @@ module tt_um_hh_stdp (
     wire signed [WIDTH-1:0] i_syn;
     wire signed [WIDTH-1:0] current;
 
-    // Current input scaling - modified for better response
-    assign current = $signed({1'b0, ui_in[7:1], 1'b0}) - $signed(8'd32);  // Changed from 8'd64
+    // Modified current input scaling for stronger effect
+    assign current = $signed({1'b0, ui_in}) - $signed(8'd128);  // Full range current input
 
     // First neuron
     lif_neuron #(
@@ -37,7 +37,7 @@ module tt_um_hh_stdp (
         .v_mem(v_mem1)
     );
 
-    // STDP synapse
+    // STDP synapse with stronger effect
     stdp_synapse #(
         .WIDTH(WIDTH),
         .DECIMAL_BITS(DECIMAL_BITS)
@@ -81,21 +81,18 @@ module lif_neuron #(
     output reg spike,
     output wire [7:0] v_mem
 );
-    // Modified constants for more reliable spiking
+    // Much more sensitive parameters
     localparam signed [WIDTH-1:0] ONE = (1 << DECIMAL_BITS);
-    localparam signed [WIDTH-1:0] V_REST = -(ONE);       // Less negative resting potential
-    localparam signed [WIDTH-1:0] V_THRESH = (ONE >>> 1); // Lower threshold
-    localparam signed [WIDTH-1:0] TAU = ONE;             // Faster integration
+    localparam signed [WIDTH-1:0] V_REST = 0;                // Resting at 0
+    localparam signed [WIDTH-1:0] V_THRESH = (ONE >>> 2);    // Very low threshold
+    localparam signed [WIDTH-1:0] TAU = ONE << 1;           // Much faster integration
     
     reg signed [WIDTH-1:0] v_mem_int;
     reg signed [WIDTH-1:0] leak_current;
     reg signed [WIDTH-1:0] total_current;
 
-    // Modified scaling for better visibility
-    wire signed [WIDTH:0] scaled_v_mem = v_mem_int + (2 * ONE);
-    assign v_mem = (scaled_v_mem[WIDTH]) ? 8'd0 :
-                  (scaled_v_mem > (8'd255 << DECIMAL_BITS)) ? 8'd255 :
-                  scaled_v_mem[WIDTH-1:DECIMAL_BITS];
+    // Simple linear scaling
+    assign v_mem = v_mem_int[WIDTH-1:DECIMAL_BITS];
 
     always @(posedge clk or negedge reset_n) begin
         if (!reset_n) begin
@@ -104,18 +101,18 @@ module lif_neuron #(
             total_current <= 0;
             spike <= 0;
         end else begin
-            // Weaker leak for easier excitation
-            leak_current <= (V_REST - v_mem_int) >>> 2;
+            // Very weak leak
+            leak_current <= (V_REST - v_mem_int) >>> 3;
             
-            // Direct current summation
-            total_current <= i_stim + i_syn + leak_current;
+            // Direct current summation with emphasis on input
+            total_current <= (i_stim <<< 1) + i_syn + leak_current;
             
             if (spike) begin
                 v_mem_int <= V_REST;
                 spike <= 0;
             end else begin
-                // Faster membrane potential updates
-                v_mem_int <= v_mem_int + ((total_current * TAU) >>> (DECIMAL_BITS - 1));
+                // Faster integration
+                v_mem_int <= v_mem_int + ((total_current * TAU) >>> (DECIMAL_BITS - 2));
                 spike <= (v_mem_int >= V_THRESH);
             end
         end
@@ -132,38 +129,33 @@ module stdp_synapse #(
     input wire post_spike,
     output wire signed [WIDTH-1:0] i_syn
 );
-    // Modified parameters for stronger synaptic effect
+    // Modified parameters for stronger effect
     localparam [WIDTH-1:0] ONE = (1 << DECIMAL_BITS);
-    localparam [WIDTH-1:0] MAX_WEIGHT = (1 << (WIDTH-1)) - 1;
-    localparam [WIDTH-1:0] MIN_WEIGHT = ONE >>> 1;  // Changed from ONE >>> 2
+    localparam [WIDTH-1:0] MAX_WEIGHT = ONE << 2;  // Much higher max weight
+    localparam [WIDTH-1:0] MIN_WEIGHT = ONE >>> 2;
     
-    // Internal registers
     reg [WIDTH-1:0] trace;
     reg [WIDTH-1:0] weight;
-    reg [WIDTH-1:0] syn_current;
 
-    // Modified synaptic current for stronger effect
-    assign i_syn = pre_spike ? $signed({1'b0, weight}) : 0;  // Removed shift
+    // Stronger synaptic current
+    assign i_syn = pre_spike ? $signed({1'b0, weight}) <<< 1 : 0;
 
     always @(posedge clk or negedge reset_n) begin
         if (!reset_n) begin
             trace <= 0;
             weight <= ONE;
-            syn_current <= 0;
         end else begin
-            // Modified trace dynamics for faster learning
+            // Faster trace dynamics
             if (pre_spike)
-                trace <= ONE << 1;  // Increased trace magnitude
+                trace <= ONE << 2;
             else
                 trace <= (trace > 0) ? trace - 1 : 0;
             
-            // Modified weight update rules
+            // More aggressive weight updates
             if (post_spike && trace > 0) begin
-                // Stronger potentiation
                 weight <= (weight < MAX_WEIGHT - (ONE >>> 1)) ? 
                          weight + (ONE >>> 1) : MAX_WEIGHT;
             end else if (pre_spike && post_spike) begin
-                // Weaker depression
                 weight <= (weight > MIN_WEIGHT + (ONE >>> 2)) ? 
                          weight - (ONE >>> 2) : MIN_WEIGHT;
             end

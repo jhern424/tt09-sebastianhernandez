@@ -4,11 +4,10 @@
 
 module tb;
     // Modified timing parameters
-    localparam RESET_DELAY = 200;         // Increased from 100
-    localparam TEST_DURATION = 10000;     // Increased from 5000
-    localparam CYCLE_PERIOD = 20;         // Kept at 50MHz clock period
+    localparam RESET_DELAY = 200;
+    localparam TEST_DURATION = 10000;
+    localparam CYCLE_PERIOD = 20;
 
-    // DUT signals
     reg clk;
     reg rst_n;
     reg ena;
@@ -18,19 +17,16 @@ module tb;
     wire [7:0] uio_out;
     wire [7:0] uio_oe;
 
-    // Test status signals
     reg [31:0] spike_count_n1;
     reg [31:0] spike_count_n2;
     reg test_passed;
 
-    // Dump waveforms
     initial begin
         $dumpfile("tb.vcd");
         $dumpvars(0, tb);
         #1;
     end
 
-    // DUT instantiation
     tt_um_hh_stdp dut (
         .ui_in(ui_in),
         .uo_out(uo_out),
@@ -42,15 +38,12 @@ module tb;
         .rst_n(rst_n)
     );
 
-    // Clock generation (50MHz)
     initial begin
         clk = 0;
         forever #(CYCLE_PERIOD/2) clk = ~clk;
     end
 
-    // Test stimulus
     initial begin
-        // Initialize
         rst_n = 0;
         ena = 1;
         ui_in = 0;
@@ -59,43 +52,35 @@ module tb;
         spike_count_n2 = 0;
         test_passed = 1;
 
-        // Extended reset sequence
         #RESET_DELAY rst_n = 1;
         
-        // Test sequence
-        #400;  // Longer stabilization period
+        #400;
         test_pre_post_spiking();
         
-        // End simulation
-        #400;  // Longer observation period
+        #400;
         check_test_results();
         
         $display("Test completed at time %t", $time);
         #100 $finish;
     end
 
-    // Modified test tasks
     task test_pre_post_spiking;
         begin
             integer i;
-            // Extended rest period
             apply_current(8'h00, 8'h00, 1000);
             
-            // Modified STDP Training Phase
-            for (i = 0; i < 15; i = i + 1) begin  // Increased iterations
-                // Stronger stimulus for Neuron 1
-                apply_current(8'hA0, 8'h00, 200);  // Increased duration
-                #100;  // Longer inter-stimulus interval
-                // Stronger stimulus for Neuron 2
-                apply_current(8'h00, 8'hA0, 200);  // Increased duration
-                #100;
-                // Extended rest period
-                apply_current(8'h00, 8'h00, 400);
+            for (i = 0; i < 20; i = i + 1) begin
+                // Strong stimulation
+                apply_current(8'hE0, 8'h00, 100);
+                #50;
+                apply_current(8'h00, 8'hE0, 100);
+                #50;
+                apply_current(8'h00, 8'h00, 200);
             end
 
-            // Extended test period
-            apply_current(8'hA0, 8'h00, 4000);
-            #1000;
+            // Test response with strong stimulus
+            apply_current(8'hE0, 8'h00, 2000);
+            #500;
         end
     endtask
 
@@ -136,19 +121,16 @@ module tb;
         end
     endtask
 
-    // Enhanced monitoring
     always @(posedge clk) begin
-        // Monitor spikes with more detailed logging
         if (uio_out[7]) begin
             spike_count_n1 <= spike_count_n1 + 1;
-            $display("Neuron 1 spike at time %t, Count: %d", $time, spike_count_n1 + 1);
+            $display("Neuron 1 spike at time %t", $time);
         end
         if (uio_out[6]) begin
             spike_count_n2 <= spike_count_n2 + 1;
-            $display("Neuron 2 spike at time %t, Count: %d", $time, spike_count_n2 + 1);
+            $display("Neuron 2 spike at time %t", $time);
         end
         
-        // More frequent membrane potential monitoring
         if ($time % 50 == 0) begin
             $display("Time %t: V_mem1 = %d, V_mem2 = %d",
                     $time,
