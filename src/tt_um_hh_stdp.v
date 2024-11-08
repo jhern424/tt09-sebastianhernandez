@@ -9,8 +9,8 @@ module tt_um_hh_stdp (
     output wire [7:0] uio_oe,   
     input  wire       ena,      
     input  wire       clk,      
-    input  wire       rst_n,    
-    output wire [7:0] synaptic_weight  // Expose synaptic weight for monitoring
+    input  wire       rst_n     
+    // Removed synaptic_weight port
 );
     parameter WIDTH = 8;
     parameter DECIMAL_BITS = 4;
@@ -47,8 +47,8 @@ module tt_um_hh_stdp (
         .reset_n(rst_n),
         .pre_spike(spike1),
         .post_spike(spike2),
-        .i_syn(i_syn),
-        .weight_out(synaptic_weight)  // Output the synaptic weight
+        .i_syn(i_syn)
+        // Removed weight_out port
     );
 
     // Second neuron
@@ -66,7 +66,7 @@ module tt_um_hh_stdp (
 
     // Output assignments
     assign uo_out = v_mem1;
-    assign uio_out = {spike1, spike2, v_mem2[7:2]};  // Take upper 6 bits of v_mem2
+    assign uio_out = {spike1, spike2, v_mem2[7:2]};
     assign uio_oe = 8'b11111111;
 
     // Synthesis directive for unused signals
@@ -135,8 +135,8 @@ module stdp_synapse #(
     input wire reset_n,
     input wire pre_spike,
     input wire post_spike,
-    output wire signed [WIDTH-1:0] i_syn,
-    output reg [7:0] weight_out  // Output synaptic weight for monitoring
+    output wire signed [WIDTH-1:0] i_syn
+    // Removed weight_out port
 );
     // Parameters
     localparam [WIDTH-1:0] ONE = (1 << DECIMAL_BITS);
@@ -156,7 +156,7 @@ module stdp_synapse #(
             trace <= 0;
             weight <= ONE;
             syn_current <= 0;
-            weight_out <= ONE;
+            // weight_out <= ONE; // Removed
         end else begin
             // Trace dynamics
             if (pre_spike)
@@ -175,7 +175,7 @@ module stdp_synapse #(
                          weight - (ONE >>> 2) : MIN_WEIGHT;
             end
             
-            weight_out <= weight;  // Update output weight for monitoring
+            // weight_out <= weight;  // Removed
         end
     end
 endmodule

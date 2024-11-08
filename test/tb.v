@@ -17,7 +17,10 @@ module tb;
     wire [7:0] uo_out;
     wire [7:0] uio_out;
     wire [7:0] uio_oe;
+
+    // Declare wire to access internal synaptic weight
     wire [7:0] synaptic_weight;
+    assign synaptic_weight = tb.dut.synapse.weight;
 
     // Test status signals
     reg [31:0] spike_count_n1;
@@ -28,6 +31,8 @@ module tb;
     initial begin
         $dumpfile("tb.vcd");
         $dumpvars(0, tb);
+        // Add this line to dump the synaptic weight
+        $dumpvars(1, dut.synapse.weight);
         #1;
     end
 
@@ -50,8 +55,8 @@ module tb;
         .uio_oe(uio_oe),
         .ena(ena),
         .clk(clk),
-        .rst_n(rst_n),
-        .synaptic_weight(synaptic_weight)  // Connect synaptic weight output
+        .rst_n(rst_n)
+        // Removed synaptic_weight port
     );
 
     // Clock generation (50MHz)

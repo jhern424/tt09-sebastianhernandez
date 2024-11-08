@@ -24,65 +24,75 @@ async def monitor_spikes(dut, duration):
     spikes_n2 = 0
     last_spike_n1 = False
     last_spike_n2 = False
-    
-    for _ in range(duration):
+
+    # Access internal synaptic weight using hierarchical path
+    synaptic_weight = dut.dut.synapse.weight
+
+    for cycle in range(duration):
         await RisingEdge(dut.clk)
-        
+
         # Detect rising edges of spikes
         current_spike_n1 = bool(dut.uio_out.value.integer & 0x80)
         current_spike_n2 = bool(dut.uio_out.value.integer & 0x40)
-        
+
         if current_spike_n1 and not last_spike_n1:
             spikes_n1 += 1
-            dut._log.info(f"Neuron 1 spike at cycle {_}")
+            dut._log.info(f"Neuron 1 spike at cycle {cycle}")
         if current_spike_n2 and not last_spike_n2:
             spikes_n2 += 1
-            dut._log.info(f"Neuron 2 spike at cycle {_}")
-            
+            dut._log.info(f"Neuron 2 spike at cycle {cycle}")
+
         last_spike_n1 = current_spike_n1
         last_spike_n2 = current_spike_n2
-        
+
+        # Log synaptic weight and membrane potentials periodically
+        if cycle % 10 == 0:
+            v_mem1 = dut.uo_out.value.integer
+            v_mem2 = ((dut.uio_out.value.integer & 0x3F) << 2)  # Extract V_mem2
+            weight = synaptic_weight.value.integer
+            dut._log.info(f"Cycle {cycle}: V_mem1 = {v_mem1}, V_mem2 = {v_mem2}, Synaptic Weight = {weight}")
+
     return spikes_n1, spikes_n2
 
 @cocotb.test()
 async def test_neuron_stdp_with_post_spikes(dut):
     """Test STDP learning with induced post-synaptic spikes"""
-    
+
     # Setup logging
     dut._log.setLevel(logging.INFO)
-    
+
     # Start clock
     clock = Clock(dut.clk, 10, units="ns")  # 100 MHz clock
     cocotb.start_soon(clock.start())
-    
+
     # Initialize
     dut.ena.value = 1
     await reset_dut(dut)
-    
+
     # Ensure both neurons are at rest
     await apply_current(dut, 0, 0, 100)
-    
+
     # STDP Training Phase with Post-Synaptic Spikes
     for trial in range(10):
         dut._log.info(f"\nSTDP Training Trial {trial + 1}")
-        
+
         # Stimulate Neuron 1 (pre-synaptic spike)
         await apply_current(dut, 128, 0, 10)
         await ClockCycles(dut.clk, 5)
-        
+
         # Stimulate Neuron 2 (post-synaptic spike)
         await apply_current(dut, 0, 128, 10)
         await ClockCycles(dut.clk, 5)
-        
+
         # Allow recovery
         await apply_current(dut, 0, 0, 50)
-    
+
     # Test Synaptic Response
     dut._log.info("\nTesting synaptic response after training")
     await apply_current(dut, 128, 0, 200)
     spikes_n1, spikes_n2 = await monitor_spikes(dut, 200)
     dut._log.info(f"Spikes during synaptic test - N1: {spikes_n1}, N2: {spikes_n2}")
-    
+
     # Assertions
     assert spikes_n1 > 0, "Neuron 1 should spike during synaptic test"
     if spikes_n2 > 0:
