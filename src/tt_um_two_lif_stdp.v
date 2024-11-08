@@ -16,14 +16,17 @@ module lif (
     always @(posedge clk or negedge reset_n) begin
         if (!reset_n) begin
             state <= 8'd0;
-            threshold <= 8'd200;
+            threshold <= 8'd150;  // Lowered threshold for easier spiking
         end else begin
-            state <= next_state;
+            if (spike)
+                state <= 8'd0;    // Reset state after spike
+            else
+                state <= next_state;
         end
     end
     
-    // Next state logic
-    assign next_state = current + (state >> 1);
+    // Next state logic with increased sensitivity
+    assign next_state = current + (state >> 2);  // Slower decay for better integration
     
     // Spike output
     assign spike = (state >= threshold);
@@ -43,21 +46,24 @@ module lif_weighted (
     wire [7:0] next_state;
     reg [7:0] threshold;
     
-    // Apply weight
-    assign weighted_input = (current * weight) >> 8;
+    // Apply weight with increased gain
+    assign weighted_input = (current * weight) >> 6;  // Increased gain
     
     // Sequential logic
     always @(posedge clk or negedge reset_n) begin
         if (!reset_n) begin
             state <= 8'd0;
-            threshold <= 8'd200;
+            threshold <= 8'd150;  // Lowered threshold
         end else begin
-            state <= next_state;
+            if (spike)
+                state <= 8'd0;    // Reset state after spike
+            else
+                state <= next_state;
         end
     end
     
-    // Next state logic
-    assign next_state = weighted_input[7:0] + (state >> 1);
+    // Next state logic with increased sensitivity
+    assign next_state = weighted_input[7:0] + (state >> 2);  // Slower decay
     
     // Spike output
     assign spike = (state >= threshold);
@@ -71,10 +77,10 @@ module stdp (
     input wire post_spike,
     output reg [7:0] weight
 );
-    // Parameters
-    parameter INIT_WEIGHT = 8'd100;
-    parameter POS_DELTA = 8'd10;
-    parameter NEG_DELTA = 8'd5;
+    // Parameters - adjusted for stronger learning
+    parameter INIT_WEIGHT = 8'd100;    // Higher initial weight
+    parameter POS_DELTA = 8'd20;       // Stronger potentiation
+    parameter NEG_DELTA = 8'd10;       // Stronger depression
     parameter WINDOW = 4'd10;
     
     // Internal signals
