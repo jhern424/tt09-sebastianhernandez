@@ -2,12 +2,12 @@
 `timescale 1ns / 1ps
 
 module tb;
-    // Modified timing parameters
+    // Parameters
     localparam RESET_DELAY = 200;
     localparam TEST_DURATION = 10000;
     localparam CYCLE_PERIOD = 20;
     
-    // Test bench signals
+    // Signals
     reg clk;
     reg rst_n;
     reg ena;
@@ -17,10 +17,9 @@ module tb;
     wire [7:0] uio_out;
     wire [7:0] uio_oe;
     
-    // Monitoring variables
+    // Monitoring
     reg [31:0] spike_count_n1;
     reg [31:0] spike_count_n2;
-    reg [7:0] prev_weight;
     reg test_passed;
     
     // VCD dump
@@ -50,14 +49,13 @@ module tb;
     
     // Main test sequence
     initial begin
-        // Initialize signals
+        // Initialize
         rst_n = 0;
         ena = 1;
         ui_in = 0;
         uio_in = 0;
         spike_count_n1 = 0;
         spike_count_n2 = 0;
-        prev_weight = 0;
         test_passed = 1;
         
         // Reset sequence
@@ -65,43 +63,41 @@ module tb;
         #400;
         
         // Run tests
-        test_stdp_learning();
+        test_pre_post_spiking();
         #400;
         
         // Check results
         check_test_results();
         
+        // Finish
         $display("Test completed at time %t", $time);
         #100 $finish;
     end
     
-    // STDP learning test task
-    task test_stdp_learning;
+    // Test task
+    task test_pre_post_spiking;
         begin
             integer i;
             
             // Initial quiet period
             apply_input(8'h00, 1000);
             
-            // Test STDP with various spike patterns
+            // STDP training cycles
             for (i = 0; i < 20; i = i + 1) begin
-                // Generate pre-synaptic spike
-                apply_input(8'hE0, 100);  // Strong stimulus to first neuron
+                // Pre-synaptic stimulation
+                apply_input(8'hE0, 100);
                 #50;
                 
-                // Allow some time for the spike to propagate
+                // Post-synaptic stimulation
                 apply_input(8'h80, 100);
+                #50;
                 
-                // Record weight
-                $display("Time %t: Synaptic weight = %d", $time, uio_out[5:0]);
-                
-                // Quiet period
+                // Recovery period
                 apply_input(8'h00, 200);
             end
             
-            // Test response after learning
-            $display("Testing post-learning response...");
-            apply_input(8'hA0, 2000);  // Moderate stimulus
+            // Test post-learning behavior
+            apply_input(8'hE0, 2000);
             #500;
         end
     endtask
@@ -116,10 +112,9 @@ module tb;
         end
     endtask
     
-    // Results checking task
+    // Result checking task
     task check_test_results;
         begin
-            // Check if neurons spiked
             if (spike_count_n1 == 0) begin
                 $display("ERROR: First neuron did not spike");
                 test_passed = 0;
@@ -134,7 +129,6 @@ module tb;
                 $display("SUCCESS: Second neuron spiked %d times", spike_count_n2);
             end
             
-            // Display final test status
             if (test_passed)
                 $display("All tests PASSED");
             else
@@ -142,32 +136,24 @@ module tb;
         end
     endtask
     
-    // Monitor spikes and state
+    // Spike monitoring
     always @(posedge clk) begin
-        // Monitor spikes
         if (uio_out[7]) begin  // First neuron spike
             spike_count_n1 <= spike_count_n1 + 1;
-            $display("Time %t: Neuron 1 spike", $time);
+            $display("First neuron spike at time %t", $time);
         end
         
         if (uio_out[6]) begin  // Second neuron spike
             spike_count_n2 <= spike_count_n2 + 1;
-            $display("Time %t: Neuron 2 spike", $time);
+            $display("Second neuron spike at time %t", $time);
         end
         
         // Monitor states and weight periodically
-        if ($time % 100 == 0) begin
-            $display("Time %t: N2_state = %d, Weight = %d", 
-                    $time, 
-                    $signed({1'b0, uo_out}),      // Second neuron state
-                    uio_out[5:0]);                // Synaptic weight
-                    
-            // Check for weight changes
-            if (uio_out[5:0] != prev_weight) begin
-                $display("Time %t: Weight changed from %d to %d", 
-                        $time, prev_weight, uio_out[5:0]);
-                prev_weight = uio_out[5:0];
-            end
+        if ($time % 50 == 0) begin
+            $display("Time %t: N2_state = %d, Weight = %d",
+                    $time,
+                    uo_out,                    // Second neuron state
+                    uio_out[5:0]);            // Synaptic weight
         end
     end
     
