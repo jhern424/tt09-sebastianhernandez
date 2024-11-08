@@ -4,7 +4,7 @@
 module tb;
     // Parameters
     localparam RESET_DELAY = 200;
-    localparam TEST_DURATION = 5000;  // Reduced duration
+    localparam TEST_DURATION = 10000;
     localparam CYCLE_PERIOD = 20;
     
     // Signals
@@ -20,13 +20,13 @@ module tb;
     // Monitoring
     reg [31:0] spike_count_n1;
     reg [31:0] spike_count_n2;
-    reg [31:0] test_cycles;
     reg test_passed;
     
     // VCD dump
     initial begin
         $dumpfile("tb.vcd");
         $dumpvars(0, tb);
+        #1;
     end
     
     // DUT instantiation
@@ -56,63 +56,103 @@ module tb;
         uio_in = 0;
         spike_count_n1 = 0;
         spike_count_n2 = 0;
-        test_cycles = 0;
         test_passed = 1;
         
-        // Reset
+        // Reset sequence
         #RESET_DELAY rst_n = 1;
+        #400;
         
-        // Let cocotb drive the test
-        #TEST_DURATION;
+        // Run test
+        test_pre_post_spiking();
+        #400;
         
         // Check results
         check_test_results();
         
-        // Clean finish
-        #100 $display("Test completed successfully");
-        #10 $finish;
+        $display("Test completed at time %t", $time);
+        #100 $finish;
     end
     
-    // Results verification
-    task check_test_results;
+    // Test task
+    task test_pre_post_spiking;
         begin
-            if (spike_count_n1 > 0)
-                $display("SUCCESS: First neuron spiked %d times", spike_count_n1);
-            else begin
-                $display("ERROR: First neuron did not spike");
-                test_passed = 0;
+            integer i;
+            
+            // Initial quiet period
+            apply_input(8'h00, 1000);
+            
+            // STDP training cycles
+            for (i = 0; i < 20; i = i + 1) begin
+                // Strong stimulation
+                apply_input(8'hE0, 100);
+                #50;
+                
+                // Allow for spike propagation
+                apply_input(8'h80, 100);
+                #50;
+                
+                // Quiet period
+                apply_input(8'h00, 200);
             end
             
-            if (spike_count_n2 > 0)
-                $display("SUCCESS: Second neuron spiked %d times", spike_count_n2);
-            else begin
-                $display("ERROR: Second neuron did not spike");
-                test_passed = 0;
-            end
+            // Test post-learning behavior
+            apply_input(8'hE0, 2000);
+            #500;
         end
     endtask
     
-    // Monitoring
+    // Input application task
+    task apply_input;
+        input [7:0] current;
+        input integer duration;
+        begin
+            ui_in = current;
+            #duration;
+        end
+    endtask
+    
+    // Results checking task
+    task check_test_results;
+        begin
+            if (spike_count_n1 == 0) begin
+                $display("ERROR: First neuron did not spike");
+                test_passed = 0;
+            end else begin
+                $display("SUCCESS: First neuron spiked %d times", spike_count_n1);
+            end
+            
+            if (spike_count_n2 == 0) begin
+                $display("ERROR: Second neuron did not spike");
+                test_passed = 0;
+            end else begin
+                $display("SUCCESS: Second neuron spiked %d times", spike_count_n2);
+            end
+            
+            if (test_passed)
+                $display("All tests PASSED");
+            else
+                $display("Some tests FAILED");
+        end
+    endtask
+    
+    // Spike monitoring
     always @(posedge clk) begin
-        test_cycles <= test_cycles + 1;
-        
         if (uio_out[7]) begin  // First neuron spike
             spike_count_n1 <= spike_count_n1 + 1;
-            if (test_cycles % 10 == 0)  // Reduced logging
-                $display("First neuron spike at time %t", $time);
+            $display("First neuron spike at time %t", $time);
         end
         
         if (uio_out[6]) begin  // Second neuron spike
             spike_count_n2 <= spike_count_n2 + 1;
-            if (test_cycles % 10 == 0)  // Reduced logging
-                $display("Second neuron spike at time %t", $time);
+            $display("Second neuron spike at time %t", $time);
         end
         
-        if (test_cycles % 100 == 0) begin  // Reduced monitoring frequency
+        // Monitor states and weight periodically
+        if ($time % 50 == 0) begin
             $display("Time %t: N2_state = %d, Weight = %d",
                     $time,
-                    uo_out,
-                    uio_out[5:0]);
+                    uo_out,                    // Second neuron state
+                    uio_out[5:0]);            // Synaptic weight
         end
     end
     
