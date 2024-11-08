@@ -16,7 +16,7 @@ module tt_um_hh_stdp (
 
     // Internal signals - only declare the bits we'll use
     wire [7:0] v_mem1;  // Only upper 8 bits
-    wire [5:0] v_mem2;  // Only upper 6 bits
+    wire [7:0] v_mem2;  // Only upper 6 bits
     wire spike1, spike2;
     wire [WIDTH-1:0] i_syn;
     wire [WIDTH-1:0] current;
@@ -66,7 +66,7 @@ module tt_um_hh_stdp (
 
     // Output assignments
     assign uo_out = v_mem1;
-    assign uio_out = {spike1, spike2, v_mem2};
+    assign uio_out = {spike1, spike2, v_mem2[7:2]};
     assign uio_oe = 8'b11111111;
 
     // Unused signals
