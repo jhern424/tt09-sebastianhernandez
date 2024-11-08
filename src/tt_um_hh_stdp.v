@@ -1,3 +1,5 @@
+`default_nettype none
+
 module tt_um_hh_stdp (
     input  wire [7:0] ui_in,    // Dedicated inputs
     output wire [7:0] uo_out,   // Dedicated outputs
@@ -11,7 +13,6 @@ module tt_um_hh_stdp (
     // Fixed-point parameters
     parameter WIDTH = 16;
     parameter DECIMAL_BITS = 7;
-    localparam ONE = (1 << DECIMAL_BITS);
 
     // Internal signals
     wire [WIDTH-1:0] v_mem1, v_mem2;
@@ -87,6 +88,8 @@ module hodgkin_huxley #(
     localparam E_NA = (50 * ONE);
     localparam E_K = (-77 * ONE);
     localparam E_L = (-54 * ONE);
+    localparam MAX_VALUE = ((1 << (WIDTH-1)) - 1);
+    localparam MIN_VALUE = (-(1 << (WIDTH-1)));
     
     // State variables and conductances
     reg [WIDTH-1:0] g_na, g_k, g_l, Cm;
@@ -99,6 +102,19 @@ module hodgkin_huxley #(
     
     // Rate constants
     wire [WIDTH-1:0] alpha_n, beta_n, alpha_m, beta_m, alpha_h, beta_h;
+
+    // Make function automatic to fix implicit static warning
+    function automatic [WIDTH-1:0] bound_value;
+        input [WIDTH-1:0] val;
+        begin
+            if (val > MAX_VALUE)
+                bound_value = MAX_VALUE;
+            else if (val < MIN_VALUE)
+                bound_value = MIN_VALUE;
+            else
+                bound_value = val;
+        end
+    endfunction
 
     // State calculator instance
     hh_state #(
@@ -197,7 +213,6 @@ module hh_state #(
             alpha_h <= 0;
             beta_h <= 0;
         end else begin
-            // Simplified rate constants with fixed-point arithmetic
             alpha_n <= (voltage + (55 * ONE)) >>> 7;
             beta_n <= ONE >>> 3;
             alpha_m <= (voltage + (40 * ONE)) >>> 4;
@@ -223,19 +238,31 @@ module stdp_synapse #(
     localparam ONE = (1 << DECIMAL_BITS);
     localparam MAX_WEIGHT = ((1 << (WIDTH-1)) - 1);
     localparam MIN_WEIGHT = 0;
-    localparam A_PLUS = (ONE >>> 5);    // LTP strength
-    localparam A_MINUS = (ONE >>> 6);   // LTD strength
+    localparam A_PLUS = (ONE >>> 5);
+    localparam A_MINUS = (ONE >>> 6);
     
     reg [WIDTH-1:0] pre_trace;
     reg [WIDTH-1:0] post_trace;
     
+    // Make function automatic to fix implicit static warning
+    function automatic [WIDTH-1:0] bound_weight;
+        input [WIDTH-1:0] w;
+        begin
+            if (w > MAX_WEIGHT)
+                bound_weight = MAX_WEIGHT;
+            else if (w < MIN_WEIGHT)
+                bound_weight = MIN_WEIGHT;
+            else
+                bound_weight = w;
+        end
+    endfunction
+
     always @(posedge clk or negedge reset_n) begin
         if (!reset_n) begin
             weight <= ONE;
             pre_trace <= 0;
             post_trace <= 0;
         end else begin
-            // Decay traces
             pre_trace <= pre_trace - (pre_trace >>> 4);
             post_trace <= post_trace - (post_trace >>> 4);
             
@@ -254,17 +281,5 @@ module stdp_synapse #(
     end
     
     assign i_syn = pre_spike ? (weight >>> 2) : 0;
-    
-    function [WIDTH-1:0] bound_weight;
-        input [WIDTH-1:0] w;
-        begin
-            if (w > MAX_WEIGHT)
-                bound_weight = MAX_WEIGHT;
-            else if (w < MIN_WEIGHT)
-                bound_weight = MIN_WEIGHT;
-            else
-                bound_weight = w;
-        end
-    endfunction
 
 endmodule
