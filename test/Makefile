@@ -4,27 +4,47 @@
 # defaults
 SIM ?= icarus
 TOPLEVEL_LANG ?= verilog
-
-# source directory
-SIM_BUILD = sim_build/$(GATES)
 PWD=$(shell pwd)
 SRC_DIR = $(PWD)/../src
 
-# source files
+# Source files
 VERILOG_SOURCES = $(SRC_DIR)/tt_um_two_lif_stdp.v
 VERILOG_SOURCES += $(PWD)/tb.v
 
-# DUT
+# RTL simulation settings
+ifneq ($(GATES),yes)
+    SIM_BUILD = sim_build/rtl
+    COMPILE_ARGS += -I$(SRC_DIR)
+else
+    # Gate level simulation settings
+    SIM_BUILD = sim_build/gl
+    COMPILE_ARGS += -DGL_TEST
+    COMPILE_ARGS += -DFUNCTIONAL
+    COMPILE_ARGS += -DUSE_POWER_PINS
+    COMPILE_ARGS += -DSIM
+    COMPILE_ARGS += -DUNIT_DELAY=\#1
+    VERILOG_SOURCES += $(PDK_ROOT)/sky130A/libs.ref/sky130_fd_sc_hd/verilog/primitives.v
+    VERILOG_SOURCES += $(PDK_ROOT)/sky130A/libs.ref/sky130_fd_sc_hd/verilog/sky130_fd_sc_hd.v
+endif
+
+# DUT settings
 TOPLEVEL = tb
 MODULE = test
+
+# Simulation variables
+SIM_ARGS += "+VERBOSE=1"
+EXTRA_ARGS += --trace-fst --trace-structs
 
 # include cocotb's make rules to take care of the simulator setup
 include $(shell cocotb-config --makefiles)/Makefile.sim
 
-# Custom clean target
+.PHONY: clean
+
+# Clean target
 clean:
 	rm -rf sim_build
 	rm -rf __pycache__
-	rm -rf results.xml
+	rm -f results.xml
 	rm -f *.vcd
-	rm -f .coverage
+	rm -f *.fst
+	rm -f *.coverage
