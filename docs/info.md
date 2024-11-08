@@ -7,97 +7,106 @@ You can also include images in this folder and reference them in the markdown. E
 
 ## How it works
 
-This design implements a biologically accurate Hodgkin-Huxley (HH) neuron model with spike-timing-dependent plasticity (STDP). The system consists of:
+This design implements a simple spiking neural network using two Leaky Integrate-and-Fire (LIF) neurons connected by a spike-timing-dependent plasticity (STDP) synapse. The system consists of:
 
-1. Two Hodgkin-Huxley Neurons:
-   - Implements full ion channel dynamics (Na+, K+, leak)
-   - Uses fixed-point arithmetic (16-bit, 7 decimal bits)
-   - Features configurable membrane properties and channel conductances
-   - Generates biologically realistic action potentials
+Two LIF Neurons:
 
-2. STDP Synapse:
-   - Connects the two neurons
-   - Implements spike-timing-dependent plasticity
-   - Features adjustable learning rates for potentiation and depression
-   - Maintains pre- and post-synaptic traces for timing
+Basic integrate-and-fire dynamics with leaky integration
+8-bit resolution for state and current
+Configurable threshold (default: 150)
+Slower decay rate (state >> 2) for better temporal integration
+First neuron receives direct current input
+Second neuron receives weighted input from first neuron
 
-3. Advanced Features:
-   - LUT-based exponential calculations for efficiency
-   - Pipelined architecture for improved performance
-   - Linear interpolation for smooth dynamics
-   - Overflow protection and bounded calculations
 
-The design uses the following parameters:
-- Operating Frequency: 50 MHz
-- Resolution: 16-bit fixed-point
-- Voltage Range: -100mV to +100mV
-- Conductances: Na+ (120mS), K+ (36mS), Leak (0.3mS)
+STDP Synapse:
+
+Connects the two neurons with plastic weight
+Initial weight: 100
+Potentiation: +20 when pre-spike precedes post-spike
+Depression: -10 when post-spike precedes pre-spike
+Timing window: 10 clock cycles
+Weight bounded between 0 and 255
+
+
+Implementation Features:
+
+Simple fixed-point arithmetic
+Synchronous design with clock and reset
+Bounded calculations to prevent overflow
+Modular design with separate neuron and STDP modules
 
 ## How to test
 
-The design can be tested in several ways:
+he design can be tested in several ways:
 
-1. Basic Functionality:
-   - Apply current input through ui[7:0]
-   - Monitor first neuron's membrane voltage on uo[7:0]
-   - Observe spike generation on uio[0] (Neuron 1) and uio[1] (Neuron 2)
-   - View second neuron's voltage on uio[7:2]
+Basic Functionality:
 
-2. Spike Generation Test:
-   ```verilog
-   // Example test sequence
-   ui_in = 8'h20;  // Apply moderate current
-   #1000;          // Wait for spike
-   ui_in = 8'h00;  // Remove current
-   #2000;          // Observe recovery
-   ```
+Apply current through ui_in[7:0]
+Monitor second neuron's state on uo_out[7:0]
+Observe spikes on uio_out[7:6]
+View synapse weight on uio_out[5:0]
 
-3. STDP Learning:
-   - Generate spikes in first neuron
-   - Observe synaptic weight changes
-   - Monitor second neuron's response
 
-4. Debug Outputs:
-   - Gate variables (m, h, n) available for monitoring
-   - Pre- and post-synaptic trace values
-   - Pipeline stage status
+Spike Generation Test:
+
+verilogCopy// Example test sequence
+ui_in = 8'h60;  // Apply strong current
+#100;           // Wait for first neuron to spike
+ui_in = 8'h00;  // Remove current
+#100;           // Observe reset and decay
+
+STDP Learning:
+
+Generate regular spikes in first neuron with steady current
+Observe weight changes on uio_out[5:0]
+Monitor second neuron's response on uo_out[7:0]
 
 ## External hardware
 
-No external hardware is required for basic operation. However, for detailed analysis, the following might be useful:
+No external hardware is required for basic operation. For analysis, consider:
 
-1. Oscilloscope or Logic Analyzer:
-   - Monitor membrane voltage waveforms
-   - Capture spike timing
-   - Observe synaptic weight changes
+Logic Analyzer:
 
-2. Signal Generator (optional):
-   - Generate precise current injection patterns
-   - Test frequency response
-   - Analyze refractory period
+Monitor spike timing
+Track synaptic weight changes
+Verify state transitions
+
+
+Signal Generator (optional):
+
+Generate precise current injection patterns
+Test different input frequencies
+Analyze neuron response characteristics
 
 ## Target Performance
 
 The design aims to achieve:
-- Temporal Resolution: 0.1ms
-- Voltage Resolution: 0.1mV
-- Spike Generation: ~2ms width
-- STDP Window: ±20ms
-- Maximum Firing Rate: 200Hz
+
+State Resolution: 8-bit (0-255)
+Threshold: 150 (configurable)
+Weight Range: 0-255
+STDP Window: 10 clock cycles
+Decay Rate: state >> 2 (75% retention per cycle)
 
 ## Resource Usage
 
 The implementation utilizes:
-- LUT Resources: 256 entries for exponential calculation
-- Memory: Minimal, mainly for state variables
-- Pipeline Stages: 4 for neuron, 2 for synapse
-- Fixed-Point Units: Multipliers and dividers with overflow protection
+
+Minimal combinational logic for state updates
+Three 8-bit registers per neuron (state, threshold)
+8-bit register for synaptic weight
+Two 4-bit counters for STDP timing
+Basic arithmetic operations (addition, multiplication, shift)
 
 ## Future Improvements
 
 Possible enhancements:
-1. Additional ion channels for more complex dynamics
-2. Multiple synapse types (excitatory/inhibitory)
-3. Neuromodulation capabilities
-4. Parameter runtime configurability
-5. Extended STDP learning rules
+1.Multiple neurons with configurable connectivity
+2.Variable thresholds and decay rates
+3.More sophisticated STDP rules
+4.Inhibitory connections
+5.Configurable timing windows
+6.Additional input/output neurons
+7.Parameter runtime configurability
+8.More complex neural dynamics (e.g., adaptive thresholds)
