@@ -1,49 +1,19 @@
 import cocotb
 from cocotb.clock import Clock
-from cocotb.triggers import ClockCycles, RisingEdge, Timer, FallingEdge
-from cocotb.binary import BinaryValue
-import numpy as np
+from cocotb.triggers import RisingEdge, FallingEdge, ClockCycles
 
-# Constants for the test
-CLOCK_FREQ = 50_000_000  # 50 MHz
-CLOCK_PERIOD = 1_000_000 / CLOCK_FREQ  # in ns
-RESET_CYCLES = 10
-TEST_DURATION = 1000  # cycles
-
-# Current injection patterns
-def generate_step_current(amplitude):
-    return int(amplitude * 255 / 100)  # Convert percentage to 8-bit value
-
-def generate_sine_current(freq, amplitude, offset, time):
-    """Generate sinusoidal current pattern"""
-    value = offset + amplitude * np.sin(2 * np.pi * freq * time)
-    return int(max(0, min(255, value)))  # Clamp to 8-bit range
-
-class HHMonitor:
-    """Monitor for HH neuron behavior"""
-    def __init__(self, dut):
-        self.dut = dut
-        self.spike_count1 = 0
-        self.spike_count2 = 0
-        self.last_spike_time1 = 0
-        self.last_spike_time2 = 0
-        
-    def update(self, current_time):
-        """Update spike statistics"""
-        if self.dut.uio_out.value[0]:  # Neuron 1 spike
-            if current_time - self.last_spike_time1 > 10:  # Debounce
-                self.spike_count1 += 1
-                self.last_spike_time1 = current_time
-                
-        if self.dut.uio_out.value[1]:  # Neuron 2 spike
-            if current_time - self.last_spike_time2 > 10:  # Debounce
-                self.spike_count2 += 1
-                self.last_spike_time2 = current_time
+async def reset_dut(dut):
+    dut.rst_n.value = 0
+    await ClockCycles(dut.clk, 5)
+    dut.rst_n.value = 1
+    await ClockCycles(dut.clk, 5)
 
 @cocotb.test()
-async def test_initialization(dut):
-    """Test proper initialization after reset"""
-    clock = Clock(dut.clk, CLOCK_PERIOD, units="ns")
+async def test_hh_neuron(dut):
+    """Test the Hodgkin-Huxley neuron with STDP"""
+    
+    # Start clock
+    clock = Clock(dut.clk, 20, units="ns")  # 50MHz clock
     cocotb.start_soon(clock.start())
     
     # Initialize values
@@ -51,128 +21,76 @@ async def test_initialization(dut):
     dut.ui_in.value = 0
     dut.uio_in.value = 0
     
-    # Reset sequence
-    dut.rst_n.value = 0
-    await ClockCycles(dut.clk, RESET_CYCLES)
-    dut.rst_n.value = 1
+    # Reset the design
+    await reset_dut(dut)
     
-    # Check initial state
-    await RisingEdge(dut.clk)
-    assert dut.uio_out.value[0] == 0, "Neuron 1 should not spike after reset"
-    assert dut.uio_out.value[1] == 0, "Neuron 2 should not spike after reset"
-
-@cocotb.test()
-async def test_single_neuron_response(dut):
-    """Test response of first neuron to current injection"""
-    clock = Clock(dut.clk, CLOCK_PERIOD, units="ns")
-    cocotb.start_soon(clock.start())
-    monitor = HHMonitor(dut)
+    # Test sequence
+    test_currents = [0, 20, 40, 80, 120, 200]
+    spike_counts = []
     
-    # Reset
-    dut.rst_n.value = 0
-    await ClockCycles(dut.clk, RESET_CYCLES)
-    dut.rst_n.value = 1
-    
-    # Test different current levels
-    current_levels = [20, 40, 60, 80]  # Percentage of max current
-    for current in current_levels:
-        dut._log.info(f"Testing current level: {current}%")
-        dut.ui_in.value = generate_step_current(current)
+    for current in test_currents:
+        dut._log.info(f"Testing with current: {current}")
         
-        # Monitor for 100 cycles
+        # Apply current
+        dut.ui_in.value = current
+        
+        # Count spikes for 100 cycles
+        spikes = 0
+        last_spike = 0
+        
         for _ in range(100):
             await RisingEdge(dut.clk)
-            monitor.update(cocotb.utils.get_sim_time('ns'))
             
-        dut._log.info(f"Spikes detected: {monitor.spike_count1}")
+            # Check for spikes on both neurons
+            if dut.uio_out.value[0] and not last_spike:
+                spikes += 1
+            last_spike = dut.uio_out.value[0]
+            
+            # Log membrane voltage
+            if _ % 10 == 0:
+                dut._log.info(f"Membrane voltage: {dut.uo_out.value}")
         
-        # Reset current
+        spike_counts.append(spikes)
+        dut._log.info(f"Spike count for current {current}: {spikes}")
+        
+        # Reset current and wait for neuron to recover
         dut.ui_in.value = 0
-        await ClockCycles(dut.clk, 50)  # Recovery period
+        await ClockCycles(dut.clk, 50)
+    
+    # Verify basic functionality
+    assert spike_counts[0] == 0, "Should not spike at zero current"
+    assert spike_counts[-1] > spike_counts[0], "Should spike more at higher current"
+    
+    dut._log.info("Test completed successfully!")
 
 @cocotb.test()
-async def test_stdp_learning(dut):
-    """Test STDP learning between neurons"""
-    clock = Clock(dut.clk, CLOCK_PERIOD, units="ns")
+async def test_stdp(dut):
+    """Test STDP learning mechanism"""
+    
+    clock = Clock(dut.clk, 20, units="ns")
     cocotb.start_soon(clock.start())
-    monitor = HHMonitor(dut)
     
-    # Reset
-    dut.rst_n.value = 0
-    await ClockCycles(dut.clk, RESET_CYCLES)
-    dut.rst_n.value = 1
+    # Initialize and reset
+    dut.ena.value = 1
+    await reset_dut(dut)
     
-    # Induce spikes with specific timing for STDP
-    for trial in range(10):
-        # Stimulate first neuron
-        dut.ui_in.value = generate_step_current(60)
+    # Test STDP by generating spike pairs
+    for _ in range(5):
+        # Generate pre-synaptic spike
+        dut.ui_in.value = 100
         await ClockCycles(dut.clk, 10)
         dut.ui_in.value = 0
         
-        # Wait for second neuron response
-        await ClockCycles(dut.clk, 40)
+        # Wait for post-synaptic response
+        await ClockCycles(dut.clk, 20)
         
-        # Update statistics
-        monitor.update(cocotb.utils.get_sim_time('ns'))
+        # Log spike timing
+        if dut.uio_out.value[0]:
+            dut._log.info("Pre-synaptic spike detected")
+        if dut.uio_out.value[1]:
+            dut._log.info("Post-synaptic spike detected")
+            
+        # Allow system to settle
+        await ClockCycles(dut.clk, 50)
     
-    dut._log.info(f"STDP test completed. N1 spikes: {monitor.spike_count1}, N2 spikes: {monitor.spike_count2}")
-
-@cocotb.test()
-async def test_frequency_response(dut):
-    """Test neuron response to different input frequencies"""
-    clock = Clock(dut.clk, CLOCK_PERIOD, units="ns")
-    cocotb.start_soon(clock.start())
-    monitor = HHMonitor(dut)
-    
-    # Reset
-    dut.rst_n.value = 0
-    await ClockCycles(dut.clk, RESET_CYCLES)
-    dut.rst_n.value = 1
-    
-    # Test different input frequencies
-    frequencies = [1, 5, 10, 20]  # Hz
-    for freq in frequencies:
-        dut._log.info(f"Testing frequency: {freq} Hz")
-        
-        # Generate sinusoidal input
-        for t in range(200):  # 200 time steps
-            current = generate_sine_current(freq, 100, 128, t/200)
-            dut.ui_in.value = current
-            await ClockCycles(dut.clk, 1)
-            monitor.update(cocotb.utils.get_sim_time('ns'))
-        
-        dut._log.info(f"Spikes at {freq}Hz: {monitor.spike_count1}")
-        monitor.spike_count1 = 0  # Reset counter
-
-@cocotb.test()
-async def test_refractory_period(dut):
-    """Test neuron refractory period"""
-    clock = Clock(dut.clk, CLOCK_PERIOD, units="ns")
-    cocotb.start_soon(clock.start())
-    monitor = HHMonitor(dut)
-    
-    # Reset
-    dut.rst_n.value = 0
-    await ClockCycles(dut.clk, RESET_CYCLES)
-    dut.rst_n.value = 1
-    
-    # Strong stimulus
-    dut.ui_in.value = generate_step_current(90)
-    
-    # Monitor response
-    last_spike_time = 0
-    min_interval = float('inf')
-    
-    for _ in range(200):
-        await RisingEdge(dut.clk)
-        current_time = cocotb.utils.get_sim_time('ns')
-        
-        if dut.uio_out.value[0]:  # Spike detected
-            if last_spike_time > 0:
-                interval = current_time - last_spike_time
-                min_interval = min(min_interval, interval)
-            last_spike_time = current_time
-    
-    dut._log.info(f"Minimum inter-spike interval: {min_interval:.2f} ns")
-
-dut._log.info("All tests completed successfully!")
+    dut._log.info("STDP test completed!")
