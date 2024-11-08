@@ -81,19 +81,18 @@ module lif_neuron #(
     output reg spike,
     output wire [7:0] v_mem
 );
-    // Modified constants for better neuron dynamics
+    // Modified constants for more reliable spiking
     localparam signed [WIDTH-1:0] ONE = (1 << DECIMAL_BITS);
-    localparam signed [WIDTH-1:0] V_REST = -(2 * ONE);    // Changed from -4*ONE
-    localparam signed [WIDTH-1:0] V_THRESH = (ONE);       // Changed from 2*ONE
-    localparam signed [WIDTH-1:0] TAU = ONE >>> 1;        // Changed from ONE >>> 2
+    localparam signed [WIDTH-1:0] V_REST = -(ONE);       // Less negative resting potential
+    localparam signed [WIDTH-1:0] V_THRESH = (ONE >>> 1); // Lower threshold
+    localparam signed [WIDTH-1:0] TAU = ONE;             // Faster integration
     
-    // Internal registers
     reg signed [WIDTH-1:0] v_mem_int;
     reg signed [WIDTH-1:0] leak_current;
     reg signed [WIDTH-1:0] total_current;
 
-    // Modified membrane potential scaling
-    wire signed [WIDTH:0] scaled_v_mem = v_mem_int + (4 * ONE);
+    // Modified scaling for better visibility
+    wire signed [WIDTH:0] scaled_v_mem = v_mem_int + (2 * ONE);
     assign v_mem = (scaled_v_mem[WIDTH]) ? 8'd0 :
                   (scaled_v_mem > (8'd255 << DECIMAL_BITS)) ? 8'd255 :
                   scaled_v_mem[WIDTH-1:DECIMAL_BITS];
@@ -105,17 +104,18 @@ module lif_neuron #(
             total_current <= 0;
             spike <= 0;
         end else begin
-            // Modified leak current calculation
-            leak_current <= (V_REST - v_mem_int) >>> 1;
+            // Weaker leak for easier excitation
+            leak_current <= (V_REST - v_mem_int) >>> 2;
             
-            // Modified current summation with scaling
-            total_current <= i_stim + (i_syn >>> 1) + leak_current;
+            // Direct current summation
+            total_current <= i_stim + i_syn + leak_current;
             
             if (spike) begin
                 v_mem_int <= V_REST;
                 spike <= 0;
             end else begin
-                v_mem_int <= v_mem_int + ((total_current * TAU) >>> DECIMAL_BITS);
+                // Faster membrane potential updates
+                v_mem_int <= v_mem_int + ((total_current * TAU) >>> (DECIMAL_BITS - 1));
                 spike <= (v_mem_int >= V_THRESH);
             end
         end
