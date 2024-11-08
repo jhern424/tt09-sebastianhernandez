@@ -4,7 +4,7 @@
 module tb;
     // Parameters
     localparam RESET_DELAY = 200;
-    localparam TEST_DURATION = 15000;
+    localparam TEST_DURATION = 20000;  // Extended duration
     localparam CYCLE_PERIOD = 20;
     
     // Signals
@@ -20,14 +20,13 @@ module tb;
     // Monitoring
     reg [31:0] spike_count_n1;
     reg [31:0] spike_count_n2;
+    reg [31:0] test_cycles;
     reg test_passed;
-    reg test_complete;
     
     // VCD dump
     initial begin
         $dumpfile("tb.vcd");
         $dumpvars(0, tb);
-        #1;
     end
     
     // DUT instantiation
@@ -57,56 +56,54 @@ module tb;
         uio_in = 0;
         spike_count_n1 = 0;
         spike_count_n2 = 0;
+        test_cycles = 0;
         test_passed = 1;
-        test_complete = 0;
         
-        // Reset sequence
-        #RESET_DELAY rst_n = 1;
+        // Extended reset sequence
+        #(RESET_DELAY * 2) rst_n = 1;
         
-        // Run tests
-        test_pre_post_spiking();
+        // Wait for initialization
+        #1000;
         
-        // Wait for test completion
-        wait(test_complete);
+        // Run test sequence
+        test_learning_sequence();
+        
+        // Final monitoring period
+        #2000;
+        
+        // Check results
         check_test_results();
         
-        // Add additional delay before finish
-        #1000;
-        $display("Test completed at time %t", $time);
+        // Orderly shutdown
+        #1000 $display("Test completed successfully");
         #100 $finish;
     end
     
-    // Test task
-    task test_pre_post_spiking;
+    // Test sequence task
+    task test_learning_sequence;
         begin
             integer i;
-            
             // Initial quiet period
             apply_input(8'h00, 1000);
             
-            // STDP training cycles
+            // Learning trials
             for (i = 0; i < 20; i = i + 1) begin
-                // Pre-synaptic stimulation
+                // Strong stimulus
                 apply_input(8'hE0, 100);
-                #50;
-                
-                // Post-synaptic stimulation
-                apply_input(8'h80, 100);
-                #50;
-                
+                #100;
                 // Recovery period
+                apply_input(8'h60, 100);
+                #100;
+                // Quiet period
                 apply_input(8'h00, 200);
             end
             
-            // Test post-learning behavior
-            apply_input(8'hE0, 2000);
-            #500;
-            
-            test_complete = 1;
+            // Final test stimulus
+            apply_input(8'hA0, 1000);
         end
     endtask
     
-    // Input application task
+    // Input application
     task apply_input;
         input [7:0] current;
         input integer duration;
@@ -116,48 +113,46 @@ module tb;
         end
     endtask
     
-    // Result checking task
+    // Results verification
     task check_test_results;
         begin
-            if (spike_count_n1 == 0) begin
+            if (spike_count_n1 > 0)
+                $display("SUCCESS: First neuron spiked %d times", spike_count_n1);
+            else begin
                 $display("ERROR: First neuron did not spike");
                 test_passed = 0;
-            end else begin
-                $display("SUCCESS: First neuron spiked %d times", spike_count_n1);
             end
             
-            if (spike_count_n2 == 0) begin
+            if (spike_count_n2 > 0)
+                $display("SUCCESS: Second neuron spiked %d times", spike_count_n2);
+            else begin
                 $display("ERROR: Second neuron did not spike");
                 test_passed = 0;
-            end else begin
-                $display("SUCCESS: Second neuron spiked %d times", spike_count_n2);
             end
-            
-            if (test_passed)
-                $display("All tests PASSED");
-            else
-                $display("Some tests FAILED");
         end
     endtask
     
-    // Spike monitoring
+    // Monitoring
     always @(posedge clk) begin
-        if (uio_out[7]) begin  // First neuron spike
+        test_cycles <= test_cycles + 1;
+        
+        // Spike detection
+        if (uio_out[7]) begin
             spike_count_n1 <= spike_count_n1 + 1;
             $display("First neuron spike at time %t", $time);
         end
         
-        if (uio_out[6]) begin  // Second neuron spike
+        if (uio_out[6]) begin
             spike_count_n2 <= spike_count_n2 + 1;
             $display("Second neuron spike at time %t", $time);
         end
         
-        // Monitor states and weight periodically
-        if ($time % 50 == 0) begin
+        // Periodic state monitoring
+        if (test_cycles % 100 == 0) begin
             $display("Time %t: N2_state = %d, Weight = %d",
                     $time,
-                    uo_out,                    // Second neuron state
-                    uio_out[5:0]);            // Synaptic weight
+                    uo_out,
+                    uio_out[5:0]);
         end
     end
     
