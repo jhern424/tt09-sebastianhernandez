@@ -13,13 +13,14 @@ module tt_um_hh_stdp (
     parameter WIDTH = 8;
     parameter DECIMAL_BITS = 4;
 
+    // Internal signals
     wire [7:0] v_mem1;
-    wire [5:0] v_mem2;
+    wire [7:0] v_mem2;  // Changed to full 8 bits
     wire spike1, spike2;
     wire signed [WIDTH-1:0] i_syn;
     wire signed [WIDTH-1:0] current;
 
-    // Direct assignment for current
+    // Current input scaling
     assign current = $signed({1'b0, ui_in[7:1], 1'b0}) - $signed(8'd64);
 
     // First neuron
@@ -35,7 +36,7 @@ module tt_um_hh_stdp (
         .v_mem(v_mem1)
     );
 
-    // Synapse with STDP
+    // STDP synapse
     stdp_synapse #(
         .WIDTH(WIDTH),
         .DECIMAL_BITS(DECIMAL_BITS)
@@ -57,14 +58,16 @@ module tt_um_hh_stdp (
         .i_stim({WIDTH{1'b0}}),
         .i_syn(i_syn),
         .spike(spike2),
-        .v_mem({v_mem2, 2'b00})
+        .v_mem(v_mem2)  // Now using full 8-bit output
     );
 
+    // Output assignments
     assign uo_out = v_mem1;
-    assign uio_out = {spike1, spike2, v_mem2};
+    assign uio_out = {spike1, spike2, v_mem2[7:2]};  // Take upper 6 bits of v_mem2
     assign uio_oe = 8'b11111111;
 
     // Synthesis directive for unused signals
+    (* keep = "true" *)
     wire unused = ena & |uio_in;
 endmodule
 
@@ -79,21 +82,22 @@ module lif_neuron #(
     output reg spike,
     output wire [7:0] v_mem
 );
-    // Fixed-point constants
+    // Constants
     localparam signed [WIDTH-1:0] ONE = (1 << DECIMAL_BITS);
     localparam signed [WIDTH-1:0] V_REST = -(4 * ONE);
     localparam signed [WIDTH-1:0] V_THRESH = (2 * ONE);
     localparam signed [WIDTH-1:0] TAU = ONE >>> 2;
     
-    // State registers
+    // Internal registers
     reg signed [WIDTH-1:0] v_mem_int;
     reg signed [WIDTH-1:0] leak_current;
     reg signed [WIDTH-1:0] total_current;
 
-    // Output scaling
-    assign v_mem = v_mem_int[WIDTH-1] ? 8'd0 : 
-                  (v_mem_int > (8'd255 << DECIMAL_BITS)) ? 8'd255 :
-                  v_mem_int[WIDTH-1:DECIMAL_BITS];
+    // Membrane potential scaling
+    wire signed [WIDTH:0] scaled_v_mem = v_mem_int + (6 * ONE);
+    assign v_mem = (scaled_v_mem[WIDTH]) ? 8'd0 :
+                  (scaled_v_mem > (8'd255 << DECIMAL_BITS)) ? 8'd255 :
+                  scaled_v_mem[WIDTH-1:DECIMAL_BITS];
 
     always @(posedge clk or negedge reset_n) begin
         if (!reset_n) begin
@@ -102,13 +106,13 @@ module lif_neuron #(
             total_current <= 0;
             spike <= 0;
         end else begin
-            // Update leak current
+            // Calculate leak current
             leak_current <= (V_REST - v_mem_int) >>> 2;
             
-            // Update total current
+            // Sum all currents
             total_current <= i_stim + i_syn + leak_current;
             
-            // Update membrane potential
+            // Update membrane potential and spike
             if (spike) begin
                 v_mem_int <= V_REST;
                 spike <= 0;
@@ -130,14 +134,17 @@ module stdp_synapse #(
     input wire post_spike,
     output wire signed [WIDTH-1:0] i_syn
 );
+    // Parameters
     localparam [WIDTH-1:0] ONE = (1 << DECIMAL_BITS);
     localparam [WIDTH-1:0] MAX_WEIGHT = (1 << (WIDTH-1)) - 1;
     localparam [WIDTH-1:0] MIN_WEIGHT = ONE >>> 2;
     
+    // Internal registers
     reg [WIDTH-1:0] trace;
     reg [WIDTH-1:0] weight;
     reg [WIDTH-1:0] syn_current;
 
+    // Synaptic current generation
     assign i_syn = pre_spike ? $signed({1'b0, weight[WIDTH-2:0]}) : 0;
 
     always @(posedge clk or negedge reset_n) begin
@@ -146,10 +153,10 @@ module stdp_synapse #(
             weight <= ONE;
             syn_current <= 0;
         end else begin
-            // Update trace
+            // Trace dynamics
             trace <= pre_spike ? (trace + ONE) : (trace - (trace >>> 2));
             
-            // Update weight
+            // Weight update
             if (post_spike && trace > 0) begin
                 weight <= (weight < MAX_WEIGHT - (ONE >>> 3)) ? 
                          weight + (ONE >>> 3) : MAX_WEIGHT;
@@ -158,7 +165,7 @@ module stdp_synapse #(
                          weight - (ONE >>> 4) : MIN_WEIGHT;
             end
             
-            // Update synaptic current
+            // Synaptic current update
             syn_current <= pre_spike ? weight : (syn_current >>> 1);
         end
     end
