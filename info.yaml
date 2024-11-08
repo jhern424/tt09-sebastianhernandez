@@ -10,7 +10,8 @@ project:
   top_module: "tt_um_hh_stdp"
   source_files:
     - "tt_um_hh_stdp.v"
-  pinout:
+    
+pinout:
     ui[0]: "Input current LSB"
     ui[1]: "Input current bit 1"
     ui[2]: "Input current bit 2"
