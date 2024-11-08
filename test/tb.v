@@ -4,7 +4,7 @@
 module tb;
     // Parameters
     localparam RESET_DELAY = 200;
-    localparam TEST_DURATION = 10000;
+    localparam TEST_DURATION = 14000;
     localparam CYCLE_PERIOD = 20;
     
     // Signals
@@ -21,11 +21,13 @@ module tb;
     reg [31:0] spike_count_n1;
     reg [31:0] spike_count_n2;
     reg test_passed;
+    reg test_done;
     
     // VCD dump
     initial begin
         $dumpfile("tb.vcd");
         $dumpvars(0, tb);
+        test_done = 0;
         #1;
     end
     
@@ -69,7 +71,22 @@ module tb;
         // Check results
         check_test_results();
         
+        // Signal test completion
+        test_done = 1;
+        
+        // Wait for monitoring to complete
+        #2000;
+        
         $display("Test completed at time %t", $time);
+        
+        // Additional delay before finish
+        #1000;
+        
+        if (test_passed)
+            $display("All tests passed successfully");
+        else
+            $display("Some tests failed");
+            
         #100 $finish;
     end
     
@@ -127,11 +144,6 @@ module tb;
             end else begin
                 $display("SUCCESS: Second neuron spiked %d times", spike_count_n2);
             end
-            
-            if (test_passed)
-                $display("All tests PASSED");
-            else
-                $display("Some tests FAILED");
         end
     endtask
     
@@ -139,20 +151,22 @@ module tb;
     always @(posedge clk) begin
         if (uio_out[7]) begin  // First neuron spike
             spike_count_n1 <= spike_count_n1 + 1;
-            $display("First neuron spike at time %t", $time);
+            if (!test_done)  // Only log spikes before test completion
+                $display("First neuron spike at time %t", $time);
         end
         
         if (uio_out[6]) begin  // Second neuron spike
             spike_count_n2 <= spike_count_n2 + 1;
-            $display("Second neuron spike at time %t", $time);
+            if (!test_done)  // Only log spikes before test completion
+                $display("Second neuron spike at time %t", $time);
         end
         
-        // Monitor states and weight periodically
-        if ($time % 50 == 0) begin
+        // Reduced monitoring frequency and only before test completion
+        if (!test_done && $time % 2000 == 0) begin
             $display("Time %t: N2_state = %d, Weight = %d",
                     $time,
-                    uo_out,                    // Second neuron state
-                    uio_out[5:0]);            // Synaptic weight
+                    uo_out,
+                    uio_out[5:0]);
         end
     end
     
