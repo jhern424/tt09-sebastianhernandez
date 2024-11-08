@@ -13,18 +13,16 @@ module tt_um_hh_stdp (
     // Fixed-point parameters
     parameter WIDTH = 16;
     parameter DECIMAL_BITS = 7;
-    parameter ONE = (1 << DECIMAL_BITS);
-    parameter MAX_VALUE = ((1 << (WIDTH-1)) - 1);
-    parameter MIN_VALUE = (-(1 << (WIDTH-1)));
 
     // Internal signals
     wire [WIDTH-1:0] v_mem1, v_mem2;
     wire spike1, spike2;
     wire [WIDTH-1:0] i_syn;
     wire [WIDTH-1:0] current;
+    wire [WIDTH-1:0] weight;  // Added missing signal
     
-    // Convert input current
-    assign current = {8'b0, ui_in, 7'b0};
+    // Convert input current (fixed width)
+    assign current = {{(WIDTH-15){1'b0}}, ui_in, 7'b0};
 
     // Instantiate submodules
     hodgkin_huxley neuron1 (
@@ -41,6 +39,7 @@ module tt_um_hh_stdp (
         .reset_n(rst_n),
         .pre_spike(spike1),
         .post_spike(spike2),
+        .weight(weight),    // Connected missing port
         .i_syn(i_syn)
     );
 
@@ -65,10 +64,7 @@ endmodule
 
 module hodgkin_huxley #(
     parameter WIDTH = 16,
-    parameter DECIMAL_BITS = 7,
-    parameter ONE = (1 << DECIMAL_BITS),
-    parameter MAX_VALUE = ((1 << (WIDTH-1)) - 1),
-    parameter MIN_VALUE = (-(1 << (WIDTH-1)))
+    parameter DECIMAL_BITS = 7
 )(
     input wire clk,
     input wire reset_n,
@@ -174,8 +170,7 @@ endmodule
 
 module hh_state #(
     parameter WIDTH = 16,
-    parameter DECIMAL_BITS = 7,
-    parameter ONE = (1 << DECIMAL_BITS)
+    parameter DECIMAL_BITS = 7
 )(
     input wire [WIDTH-1:0] voltage,
     output reg [WIDTH-1:0] alpha_n,
@@ -220,16 +215,13 @@ endmodule
 
 module stdp_synapse #(
     parameter WIDTH = 16,
-    parameter DECIMAL_BITS = 7,
-    parameter ONE = (1 << DECIMAL_BITS),
-    parameter MAX_WEIGHT = (1 << (WIDTH-1)) - 1,
-    parameter MIN_WEIGHT = 0
+    parameter DECIMAL_BITS = 7
 )(
     input wire clk,
     input wire reset_n,
     input wire pre_spike,
     input wire post_spike,
-    output reg [WIDTH-1:0] weight,
+    output reg [WIDTH-1:0] weight,    // Weight is now properly declared as output
     output wire [WIDTH-1:0] i_syn
 );
     // STDP parameters
