@@ -72,7 +72,7 @@ module tb;
         // Reset sequence
         #RESET_DELAY rst_n = 1;
         
-        // Test sequence 1: Gradually increasing current
+        // Test sequence 1: Gradually increasing current to both neurons
         #200;
         test_current_response();
         
@@ -95,21 +95,21 @@ module tb;
     // Test tasks
     task test_current_response;
         begin
-            // Test different current levels
-            apply_current(8'h20, 500); // Small current
-            apply_current(8'h40, 500); // Medium current
-            apply_current(8'h80, 500); // Large current
-            apply_current(8'h00, 500); // Return to rest
+            // Test different current levels on both neurons
+            apply_current(8'h20, 8'h20, 500); // Small current
+            apply_current(8'h40, 8'h40, 500); // Medium current
+            apply_current(8'h80, 8'h80, 500); // Large current
+            apply_current(8'h00, 8'h00, 500); // Return to rest
         end
     endtask
 
     task test_stdp;
         begin
             repeat(3) begin
-                // Generate pre-post spike pairs
-                apply_current(8'h60, 100);  // Induce pre-synaptic spike
+                // Generate pre-post spike pairs on both neurons
+                apply_current(8'h60, 8'h60, 100);  // Induce spikes
                 #200;
-                apply_current(8'h00, 100);  // Allow recovery
+                apply_current(8'h00, 8'h00, 100);  // Allow recovery
                 #200;
             end
         end
@@ -118,19 +118,21 @@ module tb;
     task test_burst_response;
         begin
             repeat(5) begin
-                apply_current(8'h70, 50);   // Brief strong stimulus
+                apply_current(8'h70, 8'h70, 50);   // Brief strong stimulus
                 #100;
-                apply_current(8'h00, 50);   // Brief recovery
+                apply_current(8'h00, 8'h00, 50);   // Brief recovery
                 #100;
             end
         end
     endtask
 
     task apply_current;
-        input [7:0] current;
+        input [7:0] current_n1;
+        input [7:0] current_n2;
         input integer duration;
         begin
-            ui_in = current;
+            ui_in = current_n1;
+            uio_in = current_n2;
             #duration;
         end
     endtask
