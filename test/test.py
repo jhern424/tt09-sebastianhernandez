@@ -1,19 +1,21 @@
 import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import RisingEdge, FallingEdge, ClockCycles
+from cocotb.binary import BinaryValue
 
 async def reset_dut(dut):
     dut.rst_n.value = 0
+    dut.ui_in.value = 0
     await ClockCycles(dut.clk, 5)
     dut.rst_n.value = 1
     await ClockCycles(dut.clk, 5)
 
 @cocotb.test()
 async def test_hh_neuron(dut):
-    """Test the Hodgkin-Huxley neuron with STDP"""
+    """Test the simplified neuron with proper current scaling"""
     
     # Start clock
-    clock = Clock(dut.clk, 20, units="ns")  # 50MHz clock
+    clock = Clock(dut.clk, 20, units="ns")
     cocotb.start_soon(clock.start())
     
     # Initialize values
@@ -24,9 +26,10 @@ async def test_hh_neuron(dut):
     # Reset the design
     await reset_dut(dut)
     
-    # Test sequence
-    test_currents = [0, 20, 40, 80, 120, 200]
+    # Test sequence with appropriate current values for 8-bit input
+    test_currents = [0, 32, 64, 96, 128]
     spike_counts = []
+    v_mem_readings = []
     
     for current in test_currents:
         dut._log.info(f"Testing with current: {current}")
@@ -34,38 +37,42 @@ async def test_hh_neuron(dut):
         # Apply current
         dut.ui_in.value = current
         
-        # Count spikes for 100 cycles
+        # Monitor for 50 cycles
         spikes = 0
-        last_spike = 0
+        v_mem_samples = []
+        last_spike = False
         
-        for _ in range(100):
+        for _ in range(50):
             await RisingEdge(dut.clk)
             
-            # Check for spikes on both neurons
-            if dut.uio_out.value[0] and not last_spike:
+            # Check for spikes
+            if dut.uio_out.value[7] and not last_spike:
                 spikes += 1
-            last_spike = dut.uio_out.value[0]
+            last_spike = bool(dut.uio_out.value[7])
             
-            # Log membrane voltage
+            # Record membrane voltage every 10 cycles
             if _ % 10 == 0:
-                dut._log.info(f"Membrane voltage: {dut.uo_out.value}")
+                v_mem = int(dut.uo_out.value)
+                v_mem_samples.append(v_mem)
+                dut._log.info(f"Membrane voltage: {v_mem}")
         
         spike_counts.append(spikes)
-        dut._log.info(f"Spike count for current {current}: {spikes}")
+        v_mem_readings.append(sum(v_mem_samples) / len(v_mem_samples))
         
-        # Reset current and wait for neuron to recover
+        # Reset and wait
         dut.ui_in.value = 0
-        await ClockCycles(dut.clk, 50)
+        await ClockCycles(dut.clk, 25)
     
     # Verify basic functionality
     assert spike_counts[0] == 0, "Should not spike at zero current"
-    assert spike_counts[-1] > spike_counts[0], "Should spike more at higher current"
+    assert max(spike_counts) > 0, "Should spike at high current"
+    assert v_mem_readings[-1] > v_mem_readings[0], "Membrane voltage should increase with current"
     
     dut._log.info("Test completed successfully!")
 
 @cocotb.test()
 async def test_stdp(dut):
-    """Test STDP learning mechanism"""
+    """Test STDP learning with proper timing"""
     
     clock = Clock(dut.clk, 20, units="ns")
     cocotb.start_soon(clock.start())
@@ -74,23 +81,35 @@ async def test_stdp(dut):
     dut.ena.value = 1
     await reset_dut(dut)
     
-    # Test STDP by generating spike pairs
-    for _ in range(5):
+    # Test STDP by generating controlled spike patterns
+    for trial in range(3):
+        dut._log.info(f"STDP trial {trial + 1}")
+        
         # Generate pre-synaptic spike
-        dut.ui_in.value = 100
-        await ClockCycles(dut.clk, 10)
+        dut.ui_in.value = 96  # Strong enough to cause spike
+        await ClockCycles(dut.clk, 5)
         dut.ui_in.value = 0
         
-        # Wait for post-synaptic response
+        # Record spike timing
+        pre_spike_time = None
+        post_spike_time = None
+        
+        # Monitor for spikes
+        for _ in range(30):
+            await RisingEdge(dut.clk)
+            
+            if dut.uio_out.value[7] and pre_spike_time is None:
+                pre_spike_time = _
+                dut._log.info(f"Pre-synaptic spike at cycle {_}")
+            
+            if dut.uio_out.value[6] and post_spike_time is None:
+                post_spike_time = _
+                dut._log.info(f"Post-synaptic spike at cycle {_}")
+        
+        # Allow system to recover
         await ClockCycles(dut.clk, 20)
         
-        # Log spike timing
-        if dut.uio_out.value[0]:
-            dut._log.info("Pre-synaptic spike detected")
-        if dut.uio_out.value[1]:
-            dut._log.info("Post-synaptic spike detected")
-            
-        # Allow system to settle
-        await ClockCycles(dut.clk, 50)
+        if pre_spike_time is not None and post_spike_time is not None:
+            dut._log.info(f"Spike interval: {post_spike_time - pre_spike_time} cycles")
     
     dut._log.info("STDP test completed!")

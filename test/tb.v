@@ -1,3 +1,4 @@
+// tb.v
 `default_nettype none
 `timescale 1ns / 1ps
 
@@ -29,10 +30,10 @@ module tb (
 
     // Instantiate the DUT
     tt_um_hh_stdp dut (
-    `ifdef GL_TEST
-        .VPWR(VPWR),
-        .VGND(VGND),
-    `endif
+        `ifdef GL_TEST
+            .VPWR(VPWR),
+            .VGND(VGND),
+        `endif
         .ui_in(ui_in),
         .uo_out(uo_out),
         .uio_in(uio_in),
@@ -49,12 +50,41 @@ module tb (
         forever #10 clk = ~clk;
     end
 
-    // Monitor spike outputs
+    // Test stimulus
+    initial begin
+        // Initialize
+        rst_n = 0;
+        ena = 1;
+        ui_in = 0;
+        uio_in = 0;
+
+        // Reset
+        #100 rst_n = 1;
+
+        // Test different current levels
+        #200 ui_in = 8'h20;  // Small current
+        #1000 ui_in = 8'h40; // Medium current
+        #1000 ui_in = 8'h80; // Large current
+        #1000 ui_in = 0;     // Return to rest
+
+        // Wait for simulation to complete
+        #1000 $finish;
+    end
+
+    // Monitor outputs
     always @(posedge clk) begin
-        if (uio_out[0]) 
+        // Monitor spikes
+        if (uio_out[7])
             $display("Neuron 1 spike at time %t", $time);
-        if (uio_out[1])
+        if (uio_out[6])
             $display("Neuron 2 spike at time %t", $time);
+        
+        // Monitor membrane potential periodically
+        if ($time % 100 == 0)
+            $display("Time %t: V_mem1 = %d, V_mem2 = %d", 
+                    $time, 
+                    $signed({1'b0, uo_out}), 
+                    $signed({1'b0, uio_out[5:0], 2'b00}));
     end
 
 endmodule
