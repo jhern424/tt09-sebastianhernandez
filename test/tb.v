@@ -4,7 +4,7 @@
 module tb;
     // Parameters
     localparam RESET_DELAY = 200;
-    localparam TEST_DURATION = 20000;  // Extended duration
+    localparam TEST_DURATION = 5000;  // Reduced duration
     localparam CYCLE_PERIOD = 20;
     
     // Signals
@@ -59,59 +59,19 @@ module tb;
         test_cycles = 0;
         test_passed = 1;
         
-        // Extended reset sequence
-        #(RESET_DELAY * 2) rst_n = 1;
+        // Reset
+        #RESET_DELAY rst_n = 1;
         
-        // Wait for initialization
-        #1000;
-        
-        // Run test sequence
-        test_learning_sequence();
-        
-        // Final monitoring period
-        #2000;
+        // Let cocotb drive the test
+        #TEST_DURATION;
         
         // Check results
         check_test_results();
         
-        // Orderly shutdown
-        #1000 $display("Test completed successfully");
-        #100 $finish;
+        // Clean finish
+        #100 $display("Test completed successfully");
+        #10 $finish;
     end
-    
-    // Test sequence task
-    task test_learning_sequence;
-        begin
-            integer i;
-            // Initial quiet period
-            apply_input(8'h00, 1000);
-            
-            // Learning trials
-            for (i = 0; i < 20; i = i + 1) begin
-                // Strong stimulus
-                apply_input(8'hE0, 100);
-                #100;
-                // Recovery period
-                apply_input(8'h60, 100);
-                #100;
-                // Quiet period
-                apply_input(8'h00, 200);
-            end
-            
-            // Final test stimulus
-            apply_input(8'hA0, 1000);
-        end
-    endtask
-    
-    // Input application
-    task apply_input;
-        input [7:0] current;
-        input integer duration;
-        begin
-            ui_in = current;
-            #duration;
-        end
-    endtask
     
     // Results verification
     task check_test_results;
@@ -136,19 +96,19 @@ module tb;
     always @(posedge clk) begin
         test_cycles <= test_cycles + 1;
         
-        // Spike detection
-        if (uio_out[7]) begin
+        if (uio_out[7]) begin  // First neuron spike
             spike_count_n1 <= spike_count_n1 + 1;
-            $display("First neuron spike at time %t", $time);
+            if (test_cycles % 10 == 0)  // Reduced logging
+                $display("First neuron spike at time %t", $time);
         end
         
-        if (uio_out[6]) begin
+        if (uio_out[6]) begin  // Second neuron spike
             spike_count_n2 <= spike_count_n2 + 1;
-            $display("Second neuron spike at time %t", $time);
+            if (test_cycles % 10 == 0)  // Reduced logging
+                $display("Second neuron spike at time %t", $time);
         end
         
-        // Periodic state monitoring
-        if (test_cycles % 100 == 0) begin
+        if (test_cycles % 100 == 0) begin  // Reduced monitoring frequency
             $display("Time %t: N2_state = %d, Weight = %d",
                     $time,
                     uo_out,
