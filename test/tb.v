@@ -4,7 +4,7 @@
 module tb;
     // Parameters
     localparam RESET_DELAY = 200;
-    localparam TEST_DURATION = 10000;
+    localparam TEST_DURATION = 15000;
     localparam CYCLE_PERIOD = 20;
     
     // Signals
@@ -21,6 +21,7 @@ module tb;
     reg [31:0] spike_count_n1;
     reg [31:0] spike_count_n2;
     reg test_passed;
+    reg test_complete;
     
     // VCD dump
     initial begin
@@ -57,19 +58,20 @@ module tb;
         spike_count_n1 = 0;
         spike_count_n2 = 0;
         test_passed = 1;
+        test_complete = 0;
         
         // Reset sequence
         #RESET_DELAY rst_n = 1;
-        #400;
         
         // Run tests
         test_pre_post_spiking();
-        #400;
         
-        // Check results
+        // Wait for test completion
+        wait(test_complete);
         check_test_results();
         
-        // Finish
+        // Add additional delay before finish
+        #1000;
         $display("Test completed at time %t", $time);
         #100 $finish;
     end
@@ -99,6 +101,8 @@ module tb;
             // Test post-learning behavior
             apply_input(8'hE0, 2000);
             #500;
+            
+            test_complete = 1;
         end
     endtask
     
