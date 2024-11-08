@@ -32,13 +32,20 @@ TOPLEVEL = tb
 MODULE = test
 
 # Simulation variables
-SIM_ARGS += "+VERBOSE=1"
-EXTRA_ARGS += --trace-fst --trace-structs
+WAVES ?= 1
+COMPILE_ARGS += -g2012 
+
+# For Icarus Verilog only
+ifeq ($(SIM), icarus)
+    ifeq ($(WAVES), 1)
+        VVPFLAGS += -fst
+    endif
+endif
 
 # include cocotb's make rules to take care of the simulator setup
 include $(shell cocotb-config --makefiles)/Makefile.sim
 
-# Extend the default clean target from cocotb's Makefile
+# Extend the default clean target
 clean::
 	rm -rf __pycache__
 	rm -f results.xml
