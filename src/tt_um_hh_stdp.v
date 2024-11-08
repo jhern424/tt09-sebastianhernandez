@@ -14,8 +14,9 @@ module tt_um_hh_stdp (
     parameter WIDTH = 16;
     parameter DECIMAL_BITS = 7;
 
-    // Internal signals
-    wire [WIDTH-1:0] v_mem1, v_mem2;
+    // Internal signals - only declare the bits we'll use
+    wire [7:0] v_mem1;  // Only upper 8 bits
+    wire [5:0] v_mem2;  // Only upper 6 bits
     wire spike1, spike2;
     wire [WIDTH-1:0] i_syn;
     wire [WIDTH-1:0] current;
@@ -24,7 +25,7 @@ module tt_um_hh_stdp (
     // Convert input current (fixed width)
     assign current = {{(WIDTH-15){1'b0}}, ui_in, 7'b0};
 
-    // Instantiate submodules
+    // First neuron
     hodgkin_huxley #(
         .WIDTH(WIDTH),
         .DECIMAL_BITS(DECIMAL_BITS)
@@ -37,6 +38,7 @@ module tt_um_hh_stdp (
         .v_mem(v_mem1)
     );
 
+    // STDP synapse
     stdp_synapse #(
         .WIDTH(WIDTH),
         .DECIMAL_BITS(DECIMAL_BITS)
@@ -49,6 +51,7 @@ module tt_um_hh_stdp (
         .i_syn(i_syn)
     );
 
+    // Second neuron
     hodgkin_huxley #(
         .WIDTH(WIDTH),
         .DECIMAL_BITS(DECIMAL_BITS)
@@ -58,12 +61,12 @@ module tt_um_hh_stdp (
         .i_stim(16'b0),
         .i_syn(i_syn),
         .spike(spike2),
-        .v_mem(v_mem2)
+        .v_mem_out(v_mem2)  // Using different name to avoid confusion
     );
 
     // Output assignments
-    assign uo_out = v_mem1[WIDTH-1:WIDTH-8];
-    assign uio_out = {spike1, spike2, v_mem2[WIDTH-1:WIDTH-6]};
+    assign uo_out = v_mem1;
+    assign uio_out = {spike1, spike2, v_mem2};
     assign uio_oe = 8'b11111111;
 
     // Unused signals
@@ -80,7 +83,7 @@ module hodgkin_huxley #(
     input wire [WIDTH-1:0] i_stim,    
     input wire [WIDTH-1:0] i_syn,     
     output reg spike,                 
-    output reg [WIDTH-1:0] v_mem
+    output wire [7:0] v_mem  // Changed to output only needed bits
 );
     // Local parameters
     localparam ONE = (1 << DECIMAL_BITS);
@@ -95,6 +98,7 @@ module hodgkin_huxley #(
     reg [WIDTH-1:0] g_na, g_k, g_l, Cm;
     reg [WIDTH-1:0] m, h, n;
     reg [WIDTH-1:0] dt;
+    reg [WIDTH-1:0] v_mem_full;  // Full width internal membrane potential
     
     // Pipeline registers
     reg [WIDTH-1:0] i_na, i_k, i_l;
@@ -103,7 +107,9 @@ module hodgkin_huxley #(
     // Rate constants
     wire [WIDTH-1:0] alpha_n, beta_n, alpha_m, beta_m, alpha_h, beta_h;
 
-    // All functions declared as automatic
+    // Output only the bits we need
+    assign v_mem = v_mem_full[WIDTH-1:WIDTH-8];
+
     function automatic [WIDTH-1:0] bound_value;
         input [WIDTH-1:0] val;
         begin
@@ -121,7 +127,7 @@ module hodgkin_huxley #(
         .WIDTH(WIDTH),
         .DECIMAL_BITS(DECIMAL_BITS)
     ) state_calc (
-        .voltage(v_mem),
+        .voltage(v_mem_full),  // Use full width for calculations
         .alpha_n(alpha_n),
         .alpha_m(alpha_m),
         .alpha_h(alpha_h),
@@ -132,7 +138,6 @@ module hodgkin_huxley #(
         .rst_n(reset_n)
     );
 
-    // Initialize and update ion currents
     always @(posedge clk or negedge reset_n) begin
         if (!reset_n) begin
             i_na <= 0;
@@ -141,25 +146,25 @@ module hodgkin_huxley #(
             Cm <= ONE;
             g_na <= 120 * ONE;
             g_k <= 36 * ONE;
-            g_l <= ONE >>> 2;  // 0.25
-            dt <= ONE >>> 4;   // Small time step
-            n <= ONE >>> 2;    // ~0.25
+            g_l <= ONE >>> 2;
+            dt <= ONE >>> 4;
+            n <= ONE >>> 2;
             m <= ONE >>> 2;
             h <= ONE >>> 2;
-            v_mem <= V_REST;
+            v_mem_full <= V_REST;
             spike <= 0;
             total_current <= 0;
         end else begin
             // Calculate ion currents
-            i_na <= ((g_na * h * m * m * m) >>> DECIMAL_BITS) * (v_mem - E_NA);
-            i_k <= ((g_k * n * n * n * n) >>> DECIMAL_BITS) * (v_mem - E_K);
-            i_l <= g_l * (v_mem - E_L);
+            i_na <= ((g_na * h * m * m * m) >>> DECIMAL_BITS) * (v_mem_full - E_NA);
+            i_k <= ((g_k * n * n * n * n) >>> DECIMAL_BITS) * (v_mem_full - E_K);
+            i_l <= g_l * (v_mem_full - E_L);
             
             // Update total current
             total_current <= i_stim + i_syn - i_na - i_k - i_l;
             
             // Update membrane potential
-            v_mem <= bound_value(v_mem + ((total_current * dt) >>> DECIMAL_BITS));
+            v_mem_full <= bound_value(v_mem_full + ((total_current * dt) >>> DECIMAL_BITS));
             
             // Update gates
             n <= bound_value(n + ((alpha_n * (ONE - n) - beta_n * n) * dt) >>> DECIMAL_BITS);
@@ -167,7 +172,7 @@ module hodgkin_huxley #(
             h <= bound_value(h + ((alpha_h * (ONE - h) - beta_h * h) * dt) >>> DECIMAL_BITS);
             
             // Detect spike
-            spike <= (v_mem > 0);
+            spike <= (v_mem_full > 0);
         end
     end
 
@@ -187,7 +192,6 @@ module hh_state #(
     input wire clk,
     input wire rst_n
 );
-    // Local parameter
     localparam ONE = (1 << DECIMAL_BITS);
 
     always @(posedge clk) begin
@@ -220,7 +224,6 @@ module stdp_synapse #(
     output reg [WIDTH-1:0] weight,
     output wire [WIDTH-1:0] i_syn
 );
-    // Local parameters
     localparam ONE = (1 << DECIMAL_BITS);
     localparam MAX_WEIGHT = ((1 << (WIDTH-1)) - 1);
     localparam MIN_WEIGHT = 0;
@@ -230,7 +233,6 @@ module stdp_synapse #(
     reg [WIDTH-1:0] pre_trace;
     reg [WIDTH-1:0] post_trace;
     
-    // Function declared as automatic
     function automatic [WIDTH-1:0] bound_weight;
         input [WIDTH-1:0] w;
         begin
