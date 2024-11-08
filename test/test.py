@@ -25,8 +25,13 @@ async def monitor_spikes(dut, duration):
     last_spike_n1 = False
     last_spike_n2 = False
 
-    # Access internal synaptic weight using hierarchical path
-    synaptic_weight = dut.dut.synapse.weight
+    # Attempt to access synaptic weight only if not in gate-level simulation
+    try:
+        synaptic_weight = dut.dut.synapse.weight
+        has_synaptic_weight = True
+    except AttributeError:
+        synaptic_weight = None
+        has_synaptic_weight = False
 
     for cycle in range(duration):
         await RisingEdge(dut.clk)
@@ -49,8 +54,11 @@ async def monitor_spikes(dut, duration):
         if cycle % 10 == 0:
             v_mem1 = dut.uo_out.value.integer
             v_mem2 = ((dut.uio_out.value.integer & 0x3F) << 2)  # Extract V_mem2
-            weight = synaptic_weight.value.integer
-            dut._log.info(f"Cycle {cycle}: V_mem1 = {v_mem1}, V_mem2 = {v_mem2}, Synaptic Weight = {weight}")
+            if has_synaptic_weight:
+                weight = synaptic_weight.value.integer
+                dut._log.info(f"Cycle {cycle}: V_mem1 = {v_mem1}, V_mem2 = {v_mem2}, Synaptic Weight = {weight}")
+            else:
+                dut._log.info(f"Cycle {cycle}: V_mem1 = {v_mem1}, V_mem2 = {v_mem2}")
 
     return spikes_n1, spikes_n2
 

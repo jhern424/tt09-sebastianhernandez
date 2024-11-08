@@ -18,9 +18,11 @@ module tb;
     wire [7:0] uio_out;
     wire [7:0] uio_oe;
 
-    // Declare wire to access internal synaptic weight
-    wire [7:0] synaptic_weight;
-    assign synaptic_weight = tb.dut.synapse.weight;
+    // Declare wire to access internal synaptic weight (RTL simulation only)
+    `ifndef GL_TEST
+        wire [7:0] synaptic_weight;
+        assign synaptic_weight = dut.synapse.weight;
+    `endif
 
     // Test status signals
     reg [31:0] spike_count_n1;
@@ -31,8 +33,10 @@ module tb;
     initial begin
         $dumpfile("tb.vcd");
         $dumpvars(0, tb);
-        // Add this line to dump the synaptic weight
-        $dumpvars(1, dut.synapse.weight);
+        // Dump synaptic weight only in RTL simulation
+        `ifndef GL_TEST
+            $dumpvars(1, dut.synapse.weight);
+        `endif
         #1;
     end
 
@@ -56,7 +60,6 @@ module tb;
         .ena(ena),
         .clk(clk),
         .rst_n(rst_n)
-        // Removed synaptic_weight port
     );
 
     // Clock generation (50MHz)
@@ -163,13 +166,21 @@ module tb;
             $display("Neuron 2 spike at time %t", $time);
         end
         
-        // Monitor membrane potentials and synaptic weight periodically
-        if ($time % 100 == 0)
-            $display("Time %t: V_mem1 = %d, V_mem2 = %d, Synaptic Weight = %d",
-                    $time,
-                    $signed({1'b0, uo_out}),
-                    $signed({1'b0, uio_out[5:0], 2'b00}),
-                    synaptic_weight);
+        // Monitor membrane potentials periodically
+        if ($time % 100 == 0) begin
+            `ifndef GL_TEST
+                $display("Time %t: V_mem1 = %d, V_mem2 = %d, Synaptic Weight = %d",
+                        $time,
+                        $signed({1'b0, uo_out}),
+                        $signed({1'b0, uio_out[5:0], 2'b00}),
+                        synaptic_weight);
+            `else
+                $display("Time %t: V_mem1 = %d, V_mem2 = %d",
+                        $time,
+                        $signed({1'b0, uo_out}),
+                        $signed({1'b0, uio_out[5:0], 2'b00}));
+            `endif
+        end
     end
 
 endmodule
