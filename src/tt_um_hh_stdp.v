@@ -103,7 +103,7 @@ module hodgkin_huxley #(
     // Rate constants
     wire [WIDTH-1:0] alpha_n, beta_n, alpha_m, beta_m, alpha_h, beta_h;
 
-    // Make function automatic to fix implicit static warning
+    // All functions declared as automatic
     function automatic [WIDTH-1:0] bound_value;
         input [WIDTH-1:0] val;
         begin
@@ -148,6 +148,7 @@ module hodgkin_huxley #(
             h <= ONE >>> 2;
             v_mem <= V_REST;
             spike <= 0;
+            total_current <= 0;
         end else begin
             // Calculate ion currents
             i_na <= ((g_na * h * m * m * m) >>> DECIMAL_BITS) * (v_mem - E_NA);
@@ -169,21 +170,6 @@ module hodgkin_huxley #(
             spike <= (v_mem > 0);
         end
     end
-
-    // Helper function
-    function [WIDTH-1:0] bound_value;
-        input [WIDTH-1:0] val;
-        localparam MAX_VALUE = ((1 << (WIDTH-1)) - 1);
-        localparam MIN_VALUE = (-(1 << (WIDTH-1)));
-        begin
-            if (val > MAX_VALUE)
-                bound_value = MAX_VALUE;
-            else if (val < MIN_VALUE)
-                bound_value = MIN_VALUE;
-            else
-                bound_value = val;
-        end
-    endfunction
 
 endmodule
 
@@ -244,7 +230,7 @@ module stdp_synapse #(
     reg [WIDTH-1:0] pre_trace;
     reg [WIDTH-1:0] post_trace;
     
-    // Make function automatic to fix implicit static warning
+    // Function declared as automatic
     function automatic [WIDTH-1:0] bound_weight;
         input [WIDTH-1:0] w;
         begin
