@@ -35,4 +35,6 @@ project:
     uio[5]: "Neuron 2 voltage bit 3"
     uio[6]: "Neuron 2 voltage bit 4"
     uio[7]: "Neuron 2 voltage bit 5"
-  yaml_version: 6
+
+# Do not change!
+yaml_version: 6
