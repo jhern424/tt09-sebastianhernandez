@@ -1,3 +1,4 @@
+// tt_um_hh_stdp.v
 `default_nettype none
 
 module tt_um_hh_stdp (
@@ -8,14 +9,15 @@ module tt_um_hh_stdp (
     output wire [7:0] uio_oe,   
     input  wire       ena,      
     input  wire       clk,      
-    input  wire       rst_n     
+    input  wire       rst_n,    
+    output wire [7:0] synaptic_weight  // Expose synaptic weight for monitoring
 );
     parameter WIDTH = 8;
     parameter DECIMAL_BITS = 4;
 
     // Internal signals
     wire [7:0] v_mem1;
-    wire [7:0] v_mem2;  // Changed to full 8 bits
+    wire [7:0] v_mem2;
     wire spike1, spike2;
     wire signed [WIDTH-1:0] i_syn;
     wire signed [WIDTH-1:0] current;
@@ -45,7 +47,8 @@ module tt_um_hh_stdp (
         .reset_n(rst_n),
         .pre_spike(spike1),
         .post_spike(spike2),
-        .i_syn(i_syn)
+        .i_syn(i_syn),
+        .weight_out(synaptic_weight)  // Output the synaptic weight
     );
 
     // Second neuron
@@ -58,7 +61,7 @@ module tt_um_hh_stdp (
         .i_stim({WIDTH{1'b0}}),
         .i_syn(i_syn),
         .spike(spike2),
-        .v_mem(v_mem2)  // Now using full 8-bit output
+        .v_mem(v_mem2)
     );
 
     // Output assignments
@@ -132,7 +135,8 @@ module stdp_synapse #(
     input wire reset_n,
     input wire pre_spike,
     input wire post_spike,
-    output wire signed [WIDTH-1:0] i_syn
+    output wire signed [WIDTH-1:0] i_syn,
+    output reg [7:0] weight_out  // Output synaptic weight for monitoring
 );
     // Parameters
     localparam [WIDTH-1:0] ONE = (1 << DECIMAL_BITS);
@@ -152,21 +156,26 @@ module stdp_synapse #(
             trace <= 0;
             weight <= ONE;
             syn_current <= 0;
+            weight_out <= ONE;
         end else begin
             // Trace dynamics
-            trace <= pre_spike ? (trace + ONE) : (trace - (trace >>> 2));
+            if (pre_spike)
+                trace <= ONE;
+            else
+                trace <= (trace > 0) ? trace - 1 : 0;
             
             // Weight update
             if (post_spike && trace > 0) begin
-                weight <= (weight < MAX_WEIGHT - (ONE >>> 3)) ? 
-                         weight + (ONE >>> 3) : MAX_WEIGHT;
+                // Potentiation
+                weight <= (weight < MAX_WEIGHT - (ONE >>> 2)) ? 
+                         weight + (ONE >>> 2) : MAX_WEIGHT;
             end else if (pre_spike && post_spike) begin
-                weight <= (weight > MIN_WEIGHT + (ONE >>> 4)) ? 
-                         weight - (ONE >>> 4) : MIN_WEIGHT;
+                // Depression
+                weight <= (weight > MIN_WEIGHT + (ONE >>> 2)) ? 
+                         weight - (ONE >>> 2) : MIN_WEIGHT;
             end
             
-            // Synaptic current update
-            syn_current <= pre_spike ? weight : (syn_current >>> 1);
+            weight_out <= weight;  // Update output weight for monitoring
         end
     end
 endmodule

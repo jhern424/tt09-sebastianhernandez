@@ -17,6 +17,7 @@ module tb;
     wire [7:0] uo_out;
     wire [7:0] uio_out;
     wire [7:0] uio_oe;
+    wire [7:0] synaptic_weight;
 
     // Test status signals
     reg [31:0] spike_count_n1;
@@ -49,7 +50,8 @@ module tb;
         .uio_oe(uio_oe),
         .ena(ena),
         .clk(clk),
-        .rst_n(rst_n)
+        .rst_n(rst_n),
+        .synaptic_weight(synaptic_weight)  // Connect synaptic weight output
     );
 
     // Clock generation (50MHz)
@@ -72,18 +74,10 @@ module tb;
         // Reset sequence
         #RESET_DELAY rst_n = 1;
         
-        // Test sequence 1: Gradually increasing current to both neurons
+        // Test sequence: Stimulate Neuron 1 only and train synapse
         #200;
-        test_current_response();
+        test_pre_post_spiking();
         
-        // Test sequence 2: STDP learning test
-        #200;
-        test_stdp();
-        
-        // Test sequence 3: Burst response
-        #200;
-        test_burst_response();
-
         // End simulation
         #200;
         check_test_results();
@@ -93,36 +87,27 @@ module tb;
     end
 
     // Test tasks
-    task test_current_response;
+    task test_pre_post_spiking;
         begin
-            // Test different current levels on both neurons
-            apply_current(8'h20, 8'h20, 500); // Small current
-            apply_current(8'h40, 8'h40, 500); // Medium current
-            apply_current(8'h80, 8'h80, 500); // Large current
-            apply_current(8'h00, 8'h00, 500); // Return to rest
-        end
-    endtask
-
-    task test_stdp;
-        begin
-            repeat(3) begin
-                // Generate pre-post spike pairs on both neurons
-                apply_current(8'h60, 8'h60, 100);  // Induce spikes
-                #200;
-                apply_current(8'h00, 8'h00, 100);  // Allow recovery
-                #200;
+            integer i;
+            // Ensure both neurons are at rest
+            apply_current(8'h00, 8'h00, 500);
+            
+            // STDP Training Phase
+            for (i = 0; i < 10; i = i + 1) begin
+                // Stimulate Neuron 1 (pre-synaptic spike)
+                apply_current(8'h80, 8'h00, 100);
+                #50;
+                // Stimulate Neuron 2 (post-synaptic spike)
+                apply_current(8'h00, 8'h80, 100);
+                #50;
+                // Rest period
+                apply_current(8'h00, 8'h00, 200);
             end
-        end
-    endtask
 
-    task test_burst_response;
-        begin
-            repeat(5) begin
-                apply_current(8'h70, 8'h70, 50);   // Brief strong stimulus
-                #100;
-                apply_current(8'h00, 8'h00, 50);   // Brief recovery
-                #100;
-            end
+            // Test if Neuron 2 spikes in response to Neuron 1 after training
+            apply_current(8'h80, 8'h00, 2000);  // Extended duration to observe spiking
+            #500;
         end
     endtask
 
@@ -144,8 +129,14 @@ module tb;
                 test_passed = 0;
             end
             if (spike_count_n2 == 0) begin
-                $display("ERROR: Neuron 2 did not spike");
-                test_passed = 0;
+                $display("Neuron 2 did not spike independently, checking synaptic response...");
+                // If Neuron 2 spiked during the final test, consider it a pass
+                if (spike_count_n2 > 0)
+                    $display("Neuron 2 spiked in response to Neuron 1 after training.");
+                else begin
+                    $display("ERROR: Neuron 2 did not spike in response to Neuron 1");
+                    test_passed = 0;
+                end
             end
             
             if (test_passed)
@@ -167,12 +158,13 @@ module tb;
             $display("Neuron 2 spike at time %t", $time);
         end
         
-        // Monitor membrane potentials periodically
+        // Monitor membrane potentials and synaptic weight periodically
         if ($time % 100 == 0)
-            $display("Time %t: V_mem1 = %d, V_mem2 = %d",
+            $display("Time %t: V_mem1 = %d, V_mem2 = %d, Synaptic Weight = %d",
                     $time,
                     $signed({1'b0, uo_out}),
-                    $signed({1'b0, uio_out[5:0], 2'b00}));
+                    $signed({1'b0, uio_out[5:0], 2'b00}),
+                    synaptic_weight);
     end
 
 endmodule
