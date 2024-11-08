@@ -38,11 +38,8 @@ EXTRA_ARGS += --trace-fst --trace-structs
 # include cocotb's make rules to take care of the simulator setup
 include $(shell cocotb-config --makefiles)/Makefile.sim
 
-.PHONY: clean
-
-# Clean target
-clean:
-	rm -rf sim_build
+# Extend the default clean target from cocotb's Makefile
+clean::
 	rm -rf __pycache__
 	rm -f results.xml
 	rm -f *.vcd
