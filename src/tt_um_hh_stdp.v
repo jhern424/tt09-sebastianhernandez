@@ -61,7 +61,7 @@ module tt_um_hh_stdp (
         .i_stim(16'b0),
         .i_syn(i_syn),
         .spike(spike2),
-        .v_mem_out(v_mem2)  // Using different name to avoid confusion
+        .v_mem(v_mem2)  // Fixed port name
     );
 
     // Output assignments
